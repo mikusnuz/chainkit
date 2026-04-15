@@ -17,8 +17,9 @@ export type ChainId =
   | 'kaspa'
   | 'eos'
   | 'nostr'
+  | 'polkadot'
 
-export type ChainGroup = 'Secp256k1' | 'ED25519' | 'STARK'
+export type ChainGroup = 'Secp256k1' | 'ED25519' | 'SR25519' | 'STARK'
 
 export interface ChainConfig {
   name: string
@@ -184,6 +185,15 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
     explorer: 'https://stellar.expert/explorer/testnet',
     group: 'ED25519',
   },
+  polkadot: {
+    name: 'Polkadot',
+    hdPath: "m/44'/354'/0'/0'/0'",
+    testnetRpc: 'wss://westend-rpc.polkadot.io',
+    decimals: 10,
+    symbol: 'DOT',
+    explorer: 'https://westend.subscan.io',
+    group: 'SR25519',
+  },
   starknet: {
     name: 'StarkNet',
     hdPath: "m/44'/9004'/0'/0/0",
@@ -198,6 +208,7 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
 export const CHAIN_GROUPS: Record<ChainGroup, ChainId[]> = {
   Secp256k1: ['ethereum', 'bitcoin', 'tron', 'cosmos', 'xrp', 'stacks', 'kaia', 'kaspa', 'eos', 'nostr'],
   ED25519: ['solana', 'ton', 'aptos', 'sui', 'near', 'cardano', 'stellar'],
+  SR25519: ['polkadot'],
   STARK: ['starknet'],
 }
 

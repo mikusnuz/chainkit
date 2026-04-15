@@ -359,6 +359,9 @@ importers:
       '@chainkit/nostr':
         specifier: workspace:*
         version: link:../packages/nostr
+      '@chainkit/polkadot':
+        specifier: workspace:*
+        version: link:../packages/polkadot
       '@chainkit/solana':
         specifier: workspace:*
         version: link:../packages/solana

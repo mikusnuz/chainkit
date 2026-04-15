@@ -20,6 +20,7 @@ import { kaspa } from '@chainkit/kaspa'
 import { eos } from '@chainkit/eos'
 import { nostr } from '@chainkit/nostr'
 import { cardano } from '@chainkit/cardano'
+import { polkadot } from '@chainkit/polkadot'
 import type { RpcManagerConfig } from '@chainkit/core'
 
 type SignerConstructor = new () => { derivePrivateKey: (mnemonic: string, path: string) => Promise<string>; getAddress: (pk: string) => string }
@@ -49,6 +50,7 @@ const CHAIN_MODULES: Record<ChainId, { Signer: SignerConstructor; Provider: Prov
   eos: eos as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   nostr: nostr as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   cardano: cardano as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  polkadot: polkadot as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
 }
 
 export interface WalletState {

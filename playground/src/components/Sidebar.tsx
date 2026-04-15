@@ -9,10 +9,11 @@ interface SidebarProps {
 const GROUP_COLORS: Record<ChainGroup, string> = {
   Secp256k1: 'text-amber-400',
   ED25519: 'text-cyan-400',
+  SR25519: 'text-pink-400',
   STARK: 'text-purple-400',
 }
 
-const GROUP_ORDER: ChainGroup[] = ['Secp256k1', 'ED25519', 'STARK']
+const GROUP_ORDER: ChainGroup[] = ['Secp256k1', 'ED25519', 'SR25519', 'STARK']
 
 const Sidebar = ({ selected, onSelect }: SidebarProps) => {
   return (
@@ -61,7 +62,7 @@ const Sidebar = ({ selected, onSelect }: SidebarProps) => {
 
       <div className="p-3 border-t border-surface-300">
         <div className="text-[10px] text-gray-600 text-center">
-          18 chains supported
+          19 chains supported
         </div>
       </div>
     </aside>
