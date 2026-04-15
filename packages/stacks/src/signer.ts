@@ -1,0 +1,394 @@
+import {
+  generateMnemonic,
+  validateMnemonic,
+  mnemonicToSeed,
+  derivePath,
+  ChainKitError,
+  ErrorCode,
+} from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import { sha256 } from '@noble/hashes/sha256'
+import { ripemd160 } from '@noble/hashes/ripemd160'
+import { hmac } from '@noble/hashes/hmac'
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
+import * as secp256k1 from '@noble/secp256k1'
+
+// @noble/secp256k1 v2 requires manually setting the hmac function
+secp256k1.etc.hmacSha256Sync = (k: Uint8Array, ...m: Uint8Array[]) => {
+  return hmac(sha256, k, secp256k1.etc.concatBytes(...m))
+}
+
+/** Default Stacks BIP44 HD path */
+export const STACKS_HD_PATH = "m/44'/5757'/0'/0/0"
+
+/** c32 alphabet (Crockford's base32 variant without I, L, O, U) */
+const C32_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+/** Stacks address version bytes */
+const VERSION_MAINNET_SINGLE_SIG = 22
+const VERSION_TESTNET_SINGLE_SIG = 26
+
+/**
+ * Encode bytes to c32 string.
+ * Based on the Stacks c32check specification.
+ */
+function c32encode(data: Uint8Array): string {
+  // Convert bytes to a BigInt
+  let num = 0n
+  for (const byte of data) {
+    num = (num << 8n) | BigInt(byte)
+  }
+
+  if (num === 0n) {
+    // Count leading zeros
+    let result = ''
+    for (const byte of data) {
+      if (byte === 0) {
+        result += C32_ALPHABET[0]
+      } else {
+        break
+      }
+    }
+    if (result.length === 0) result = C32_ALPHABET[0]
+    return result
+  }
+
+  // Convert to c32
+  const chars: string[] = []
+  while (num > 0n) {
+    const remainder = Number(num % 32n)
+    chars.push(C32_ALPHABET[remainder])
+    num = num / 32n
+  }
+
+  // Add leading zeros
+  for (const byte of data) {
+    if (byte === 0) {
+      chars.push(C32_ALPHABET[0])
+    } else {
+      break
+    }
+  }
+
+  return chars.reverse().join('')
+}
+
+/**
+ * Compute the c32check checksum (double SHA-256 of version + data, first 4 bytes).
+ */
+function c32checksum(version: number, data: Uint8Array): Uint8Array {
+  const versionedData = new Uint8Array(1 + data.length)
+  versionedData[0] = version
+  versionedData.set(data, 1)
+  const hash1 = sha256(versionedData)
+  const hash2 = sha256(hash1)
+  return hash2.slice(0, 4)
+}
+
+/**
+ * Encode data with c32check encoding.
+ * Result: version char + c32 encoded (data + checksum)
+ */
+function c32checkEncode(version: number, data: Uint8Array): string {
+  if (version < 0 || version > 31) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid c32check version: ${version}`,
+    )
+  }
+
+  const checksum = c32checksum(version, data)
+
+  // Concatenate data + checksum
+  const dataWithChecksum = new Uint8Array(data.length + checksum.length)
+  dataWithChecksum.set(data, 0)
+  dataWithChecksum.set(checksum, data.length)
+
+  const versionChar = C32_ALPHABET[version]
+  const encoded = c32encode(dataWithChecksum)
+
+  return versionChar + encoded
+}
+
+/**
+ * Decode a c32check encoded string.
+ * Returns { version, data }.
+ */
+function c32checkDecode(encoded: string): { version: number; data: Uint8Array } {
+  if (encoded.length < 2) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_ADDRESS,
+      'c32check string too short',
+    )
+  }
+
+  const versionChar = encoded[0]
+  const version = C32_ALPHABET.indexOf(versionChar.toUpperCase())
+  if (version < 0) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_ADDRESS,
+      `Invalid c32check version character: ${versionChar}`,
+    )
+  }
+
+  const dataEncoded = encoded.slice(1)
+  const dataWithChecksum = c32decode(dataEncoded)
+
+  if (dataWithChecksum.length < 4) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_ADDRESS,
+      'c32check data too short for checksum',
+    )
+  }
+
+  const data = dataWithChecksum.slice(0, dataWithChecksum.length - 4)
+  const checksum = dataWithChecksum.slice(dataWithChecksum.length - 4)
+
+  // Verify checksum
+  const expectedChecksum = c32checksum(version, data)
+  for (let i = 0; i < 4; i++) {
+    if (checksum[i] !== expectedChecksum[i]) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_ADDRESS,
+        'c32check checksum mismatch',
+      )
+    }
+  }
+
+  return { version, data }
+}
+
+/**
+ * Decode a c32 string to bytes.
+ */
+function c32decode(encoded: string): Uint8Array {
+  const upper = encoded.toUpperCase()
+
+  // Count leading zeros (represented by '0' in c32)
+  let leadingZeros = 0
+  for (const ch of upper) {
+    if (ch === '0') {
+      leadingZeros++
+    } else {
+      break
+    }
+  }
+
+  // Convert c32 to BigInt
+  let num = 0n
+  for (const ch of upper) {
+    const idx = C32_ALPHABET.indexOf(ch)
+    if (idx < 0) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_ADDRESS,
+        `Invalid c32 character: ${ch}`,
+      )
+    }
+    num = num * 32n + BigInt(idx)
+  }
+
+  // Convert BigInt to bytes
+  const hexStr = num === 0n ? '' : num.toString(16)
+  const padded = hexStr.length % 2 === 0 ? hexStr : '0' + hexStr
+  const numBytes = padded.length > 0 ? hexToBytes(padded) : new Uint8Array(0)
+
+  // Prepend leading zero bytes
+  const result = new Uint8Array(leadingZeros + numBytes.length)
+  // Leading zeros are already 0 in the Uint8Array
+  result.set(numBytes, leadingZeros)
+
+  return result
+}
+
+/**
+ * Convert a hash160 (20 bytes) to a Stacks address.
+ */
+function hash160ToAddress(hash160: Uint8Array, version: number): string {
+  const prefix = version === VERSION_MAINNET_SINGLE_SIG ? 'SP' : 'ST'
+  return prefix + c32checkEncode(version, hash160)
+}
+
+/**
+ * Validate a Stacks address.
+ */
+function isValidStacksAddress(address: string): boolean {
+  if (!address.startsWith('SP') && !address.startsWith('ST')) {
+    return false
+  }
+
+  try {
+    const prefix = address.slice(0, 2)
+    const encoded = address.slice(2)
+    const { version, data } = c32checkDecode(encoded)
+
+    // Check version matches prefix
+    if (prefix === 'SP' && version !== VERSION_MAINNET_SINGLE_SIG) return false
+    if (prefix === 'ST' && version !== VERSION_TESTNET_SINGLE_SIG) return false
+
+    // Hash160 should be 20 bytes
+    if (data.length !== 20) return false
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Stacks signer implementing the ChainSigner interface.
+ * Uses secp256k1 with c32check address encoding.
+ */
+export class StacksSigner implements ChainSigner {
+  private readonly network: 'mainnet' | 'testnet'
+
+  constructor(network: 'mainnet' | 'testnet' = 'mainnet') {
+    this.network = network
+  }
+
+  /**
+   * Generate a new BIP39 mnemonic phrase.
+   */
+  generateMnemonic(strength?: number): string {
+    return generateMnemonic(strength)
+  }
+
+  /**
+   * Validate a BIP39 mnemonic phrase.
+   */
+  validateMnemonic(mnemonic: string): boolean {
+    return validateMnemonic(mnemonic)
+  }
+
+  /**
+   * Derive a private key from a mnemonic using the Stacks BIP44 path.
+   * Returns a '0x'-prefixed hex string.
+   */
+  async derivePrivateKey(mnemonic: string, path: string): Promise<HexString> {
+    const seed = await mnemonicToSeed(mnemonic)
+    const privateKeyHex = derivePath(seed, path)
+    return '0x' + privateKeyHex
+  }
+
+  /**
+   * Get the Stacks address for a given private key.
+   * Returns an SP... (mainnet) or ST... (testnet) address.
+   */
+  getAddress(privateKey: HexString): Address {
+    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
+    const pkBytes = hexToBytes(pkHex)
+
+    if (pkBytes.length !== 32) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PRIVATE_KEY,
+        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+      )
+    }
+
+    // Get compressed public key (33 bytes)
+    const publicKey = secp256k1.getPublicKey(pkBytes, true)
+
+    // SHA-256 then RIPEMD-160 (Hash160)
+    const shaHash = sha256(publicKey)
+    const hash160 = ripemd160(shaHash)
+
+    const version = this.network === 'mainnet'
+      ? VERSION_MAINNET_SINGLE_SIG
+      : VERSION_TESTNET_SINGLE_SIG
+
+    return hash160ToAddress(hash160, version)
+  }
+
+  /**
+   * Sign a Stacks transaction.
+   *
+   * Stacks transactions use a custom serialization format. This method
+   * produces a secp256k1 signature over the transaction hash provided
+   * in tx.data or a hash of the serialized fields.
+   */
+  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
+    const pkBytes = hexToBytes(pkHex)
+
+    // If tx.data contains a pre-serialized transaction hash, sign it directly
+    if (tx.data) {
+      const txHash = hexToBytes(tx.data.startsWith('0x') ? tx.data.slice(2) : tx.data)
+      const signature = secp256k1.sign(txHash, pkBytes)
+
+      // Stacks signature format: recovery byte (1) + r (32) + s (32) = 65 bytes
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const recoveryByte = signature.recovery.toString(16).padStart(2, '0')
+
+      return '0x' + recoveryByte + rHex + sHex
+    }
+
+    // Build a minimal STX transfer payload and sign it
+    const network = (tx.extra?.network as string) ?? this.network
+    const nonce = tx.nonce ?? 0
+    const fee = tx.fee?.fee ?? '0'
+    const amount = tx.value ?? '0'
+    const memo = (tx.extra?.memo as string) ?? ''
+
+    // Construct a deterministic message to sign:
+    // SHA-256 of: version + chainId + nonce + fee + amount + to + memo
+    const encoder = new TextEncoder()
+    const parts = [
+      network === 'mainnet' ? '00' : '80',
+      nonce.toString(16).padStart(16, '0'),
+      BigInt(fee).toString(16).padStart(16, '0'),
+      BigInt(amount).toString(16).padStart(16, '0'),
+      bytesToHex(encoder.encode(tx.to)),
+      bytesToHex(encoder.encode(memo)),
+    ]
+    const payload = hexToBytes(parts.join(''))
+    const msgHash = sha256(payload)
+
+    const signature = secp256k1.sign(msgHash, pkBytes)
+    const rHex = signature.r.toString(16).padStart(64, '0')
+    const sHex = signature.s.toString(16).padStart(64, '0')
+    const recoveryByte = signature.recovery.toString(16).padStart(2, '0')
+
+    return '0x' + recoveryByte + rHex + sHex
+  }
+
+  /**
+   * Sign an arbitrary message with the Stacks prefix.
+   */
+  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
+    const pkBytes = hexToBytes(pkHex)
+
+    const msgBytes =
+      typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+    // Stacks message signing uses the prefix "Stacks Signed Message:\n" + length
+    const prefix = new TextEncoder().encode(
+      `\x19Stacks Signed Message:\n${msgBytes.length}`,
+    )
+    const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
+    prefixedMsg.set(prefix, 0)
+    prefixedMsg.set(msgBytes, prefix.length)
+
+    const msgHash = sha256(prefixedMsg)
+    const signature = secp256k1.sign(msgHash, pkBytes)
+
+    const rHex = signature.r.toString(16).padStart(64, '0')
+    const sHex = signature.s.toString(16).padStart(64, '0')
+    const v = signature.recovery + 27
+
+    return '0x' + rHex + sHex + v.toString(16).padStart(2, '0')
+  }
+}
+
+// Export utilities for testing and external use
+export {
+  c32checkEncode,
+  c32checkDecode,
+  c32encode,
+  c32decode,
+  isValidStacksAddress,
+  hash160ToAddress,
+  STACKS_HD_PATH as DEFAULT_PATH,
+  VERSION_MAINNET_SINGLE_SIG,
+  VERSION_TESTNET_SINGLE_SIG,
+}
