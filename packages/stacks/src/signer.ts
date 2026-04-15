@@ -7,11 +7,8 @@ import {
   ErrorCode,
 } from '@chainkit/core'
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
-import {
-  getAddressFromPrivateKey,
-  makeSTXTokenTransfer,
-} from '@stacks/transactions'
 import { sha256 } from '@noble/hashes/sha256'
+import { sha512_256 } from '@noble/hashes/sha512'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
@@ -276,8 +273,178 @@ function getPrivateKeyBytes(privateKey: HexString): Uint8Array {
   return pkBytes
 }
 
-function getCompressedPrivateKeyHex(privateKey: HexString): string {
-  return `${stripHexPrefix(privateKey)}01`
+// ---------------------------------------------------------------------------
+// Native SIP-005 STX token transfer serialization
+// ---------------------------------------------------------------------------
+
+/** Write a u64 big-endian into buf at the given offset. */
+function writeU64BE(buf: Uint8Array, offset: number, value: bigint): void {
+  const hi = Number((value >> 32n) & 0xffffffffn)
+  const lo = Number(value & 0xffffffffn)
+  buf[offset] = (hi >>> 24) & 0xff
+  buf[offset + 1] = (hi >>> 16) & 0xff
+  buf[offset + 2] = (hi >>> 8) & 0xff
+  buf[offset + 3] = hi & 0xff
+  buf[offset + 4] = (lo >>> 24) & 0xff
+  buf[offset + 5] = (lo >>> 16) & 0xff
+  buf[offset + 6] = (lo >>> 8) & 0xff
+  buf[offset + 7] = lo & 0xff
+}
+
+/** Write a u32 big-endian into buf at the given offset. */
+function writeU32BE(buf: Uint8Array, offset: number, value: number): void {
+  buf[offset] = (value >>> 24) & 0xff
+  buf[offset + 1] = (value >>> 16) & 0xff
+  buf[offset + 2] = (value >>> 8) & 0xff
+  buf[offset + 3] = value & 0xff
+}
+
+interface StxTransferParams {
+  recipient: string
+  amount: bigint
+  fee: bigint
+  nonce: bigint
+  memo: string
+  network: 'mainnet' | 'testnet'
+  privateKey: Uint8Array
+}
+
+/**
+ * Serialize a STX token transfer transaction following SIP-005 and sign it
+ * using the two-stage sighash process with sha512/256.
+ *
+ * Returns the hex string of the fully signed serialized transaction.
+ */
+function serializeAndSignStxTransfer(params: StxTransferParams): string {
+  const { recipient, amount, fee, nonce, memo, network, privateKey } = params
+
+  // Decode recipient address: strip 'S' prefix, then c32check decode
+  const recipientEncoded = recipient.slice(1) // remove 'S'
+  const { version: recipientVersion, data: recipientHash160 } =
+    c32checkDecode(recipientEncoded)
+
+  // Derive sender's compressed pubkey hash160
+  const pubkey = secp256k1.getPublicKey(privateKey, true)
+  const senderHash160 = ripemd160(sha256(pubkey))
+
+  // SIP-005 TokenTransfer memo: 34 bytes total, raw content zero-padded.
+  const memoBytes = new Uint8Array(34)
+  if (memo.length > 0) {
+    const encoded = new TextEncoder().encode(memo)
+    const copyLen = Math.min(encoded.length, 34)
+    memoBytes.set(encoded.subarray(0, copyLen), 0)
+  }
+
+  // --- Compute transaction byte sizes ---
+  // Header: version(1) + chain_id(4) = 5
+  // Authorization (P2PKH SingleSig):
+  //   type_id(1) + hash_mode(1) + signer(20) + nonce(8) + fee(8)
+  //   + key_encoding(1) + signature(65) = 104
+  // Anchor mode: 1
+  // Post-condition mode: 1
+  // Post-conditions length: 4 (u32, value 0)
+  // Payload type: 1
+  // Recipient principal: type(1) + version(1) + hash160(20) = 22
+  // Amount: 8
+  // Memo: 34
+  // Total = 5 + 104 + 1 + 1 + 4 + 1 + 22 + 8 + 34 = 180
+  const TX_SIZE = 180
+
+  function buildTx(signature: Uint8Array): Uint8Array {
+    const buf = new Uint8Array(TX_SIZE)
+    let offset = 0
+
+    // Version byte
+    buf[offset++] = network === 'mainnet' ? 0x00 : 0x80
+
+    // Chain ID (u32 BE)
+    writeU32BE(buf, offset, network === 'mainnet' ? 0x00000001 : 0x80000000)
+    offset += 4
+
+    // --- Authorization (Standard spending condition, single-sig P2PKH) ---
+    // auth_type: 0x04 = Standard
+    buf[offset++] = 0x04
+    // hash_mode: 0x00 = P2PKH
+    buf[offset++] = 0x00
+    // signer: 20-byte hash160 of compressed pubkey
+    buf.set(senderHash160, offset)
+    offset += 20
+    // nonce: u64 BE
+    writeU64BE(buf, offset, nonce)
+    offset += 8
+    // fee: u64 BE
+    writeU64BE(buf, offset, fee)
+    offset += 8
+    // key_encoding: 0x01 = compressed
+    buf[offset++] = 0x01
+    // signature: 65 bytes (recovery_id byte + r 32 bytes + s 32 bytes)
+    buf.set(signature, offset)
+    offset += 65
+
+    // Anchor mode: 0x03 = Any
+    buf[offset++] = 0x03
+
+    // Post-condition mode: 0x02 = Allow
+    buf[offset++] = 0x02
+
+    // Post-conditions length: u32 BE = 0
+    writeU32BE(buf, offset, 0)
+    offset += 4
+
+    // --- Payload (Token Transfer) ---
+    // payload_type: 0x00 = token transfer
+    buf[offset++] = 0x00
+
+    // Recipient: standard principal
+    // type_id: 0x05 = standard principal
+    buf[offset++] = 0x05
+    // version byte from c32check decode
+    buf[offset++] = recipientVersion
+    // hash160: 20 bytes
+    buf.set(recipientHash160, offset)
+    offset += 20
+
+    // Amount: u64 BE
+    writeU64BE(buf, offset, amount)
+    offset += 8
+
+    // Memo: 34 bytes
+    buf.set(memoBytes, offset)
+    offset += 34
+
+    return buf
+  }
+
+  // Step 1: Serialize with empty signature (65 zero bytes)
+  const emptySig = new Uint8Array(65)
+  const unsignedTx = buildTx(emptySig)
+
+  // Step 2: Initial sighash = sha512/256(serialized_tx)
+  const initialSighash = sha512_256(unsignedTx)
+
+  // Step 3: Presign sighash
+  //   presign_input = initialSighash(32) + auth_flag(1) + fee(8) + nonce(8) = 49 bytes
+  const presignInput = new Uint8Array(49)
+  presignInput.set(initialSighash, 0)
+  presignInput[32] = 0x04 // auth_flag = Standard
+  writeU64BE(presignInput, 33, fee)
+  writeU64BE(presignInput, 41, nonce)
+  const finalHash = sha512_256(presignInput)
+
+  // Step 4: Sign with secp256k1
+  const sig = secp256k1.sign(finalHash, privateKey)
+
+  // Step 5: Build the 65-byte signature (recovery_id + r + s)
+  const sigBytes = new Uint8Array(65)
+  sigBytes[0] = sig.recovery
+  const rHex = sig.r.toString(16).padStart(64, '0')
+  const sHex = sig.s.toString(16).padStart(64, '0')
+  sigBytes.set(hexToBytes(rHex), 1)
+  sigBytes.set(hexToBytes(sHex), 33)
+
+  // Step 6: Build final transaction with real signature
+  const finalTx = buildTx(sigBytes)
+  return bytesToHex(finalTx)
 }
 
 /**
@@ -318,13 +485,18 @@ export class StacksSigner implements ChainSigner {
   /**
    * Get the Stacks address for a given private key.
    * Returns an SP... (mainnet) or ST... (testnet) address.
+   *
+   * Derivation: secp256k1 compressed pubkey -> SHA-256 -> RIPEMD-160 -> c32check
    */
   getAddress(privateKey: HexString): Address {
-    getPrivateKeyBytes(privateKey)
-    return getAddressFromPrivateKey(
-      getCompressedPrivateKeyHex(privateKey),
-      this.network,
-    )
+    const pkBytes = getPrivateKeyBytes(privateKey)
+    const pubkey = secp256k1.getPublicKey(pkBytes, true) // compressed
+    const hash = ripemd160(sha256(pubkey))
+    const version =
+      this.network === 'mainnet'
+        ? VERSION_MAINNET_SINGLE_SIG
+        : VERSION_TESTNET_SINGLE_SIG
+    return hash160ToAddress(hash, version)
   }
 
   /**
@@ -350,25 +522,24 @@ export class StacksSigner implements ChainSigner {
       return '0x' + recoveryByte + rHex + sHex
     }
 
-    // Build and sign a standard STX token transfer using the canonical
-    // Stacks transaction serializer/signing protocol.
+    // Build and sign a standard STX token transfer natively (SIP-005).
     const network = (tx.extra?.network as 'mainnet' | 'testnet' | undefined) ?? this.network
-    const nonce = tx.nonce ?? 0
-    const fee = tx.fee?.fee ?? '0'
-    const amount = tx.value ?? '0'
+    const nonce = BigInt(tx.nonce ?? 0)
+    const fee = BigInt(tx.fee?.fee ?? '0')
+    const amount = BigInt(tx.value ?? '0')
     const memo = (tx.extra?.memo as string) ?? ''
 
-    const signedTx = await makeSTXTokenTransfer({
+    const serializedHex = serializeAndSignStxTransfer({
       recipient: tx.to,
-      amount: BigInt(amount),
-      fee: BigInt(fee),
-      nonce: BigInt(nonce),
+      amount,
+      fee,
+      nonce,
       memo,
       network,
-      senderKey: getCompressedPrivateKeyHex(privateKey),
+      privateKey: pkBytes,
     })
 
-    return '0x' + signedTx.serialize()
+    return '0x' + serializedHex
   }
 
   /**
