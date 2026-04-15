@@ -24,6 +24,21 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.17)(jiti@1.21.7)
 
+  packages/algorand:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/aptos:
     dependencies:
       '@chainkit/core':
@@ -128,6 +143,51 @@ importers:
       '@noble/secp256k1':
         specifier: ^2.2.0
         version: 2.3.0
+
+  packages/filecoin:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/hedera:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/icp:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
 
   packages/kaia:
     dependencies:
