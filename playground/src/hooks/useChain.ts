@@ -16,9 +16,7 @@ import { stellar } from '@chainkit/stellar'
 import { starknet } from '@chainkit/starknet'
 import { stacks } from '@chainkit/stacks'
 import { kaia } from '@chainkit/kaia'
-import { kaspa } from '@chainkit/kaspa'
 import { eos } from '@chainkit/eos'
-import { nostr } from '@chainkit/nostr'
 import { cardano } from '@chainkit/cardano'
 import { polkadot } from '@chainkit/polkadot'
 import { hedera } from '@chainkit/hedera'
@@ -58,9 +56,7 @@ const CHAIN_MODULES: Record<ChainId, { Signer: SignerConstructor; Provider: Prov
   starknet: starknet as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   stacks: stacks as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   kaia: kaia as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
-  kaspa: kaspa as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   eos: eos as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
-  nostr: nostr as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   cardano: cardano as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   polkadot: polkadot as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   hedera: hedera as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },

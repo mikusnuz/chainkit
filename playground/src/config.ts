@@ -14,9 +14,7 @@ export type ChainId =
   | 'starknet'
   | 'stacks'
   | 'kaia'
-  | 'kaspa'
   | 'eos'
-  | 'nostr'
   | 'polkadot'
   | 'hedera'
   | 'filecoin'
@@ -107,15 +105,6 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
     explorer: 'https://kairos.kaiascope.com',
     group: 'Secp256k1',
   },
-  kaspa: {
-    name: 'Kaspa',
-    hdPath: "m/44'/111111'/0'/0/0",
-    testnetRpc: '',
-    decimals: 8,
-    symbol: 'KAS',
-    explorer: '',
-    group: 'Secp256k1',
-  },
   eos: {
     name: 'EOS',
     hdPath: "m/44'/194'/0'/0/0",
@@ -123,15 +112,6 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
     decimals: 4,
     symbol: 'EOS',
     explorer: 'https://jungle4.eosq.eosnation.io',
-    group: 'Secp256k1',
-  },
-  nostr: {
-    name: 'Nostr',
-    hdPath: "m/44'/1237'/0'/0/0",
-    testnetRpc: '',
-    decimals: 0,
-    symbol: 'SAT',
-    explorer: '',
     group: 'Secp256k1',
   },
   solana: {
@@ -326,7 +306,7 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
 }
 
 export const CHAIN_GROUPS: Record<ChainGroup, ChainId[]> = {
-  Secp256k1: ['ethereum', 'bitcoin', 'tron', 'cosmos', 'xrp', 'stacks', 'kaia', 'kaspa', 'eos', 'nostr', 'filecoin', 'vechain', 'theta', 'icon'],
+  Secp256k1: ['ethereum', 'bitcoin', 'tron', 'cosmos', 'xrp', 'stacks', 'kaia', 'eos', 'filecoin', 'vechain', 'theta', 'icon'],
   ED25519: ['solana', 'ton', 'aptos', 'sui', 'near', 'cardano', 'stellar', 'hedera', 'icp', 'algorand', 'tezos', 'multiversx', 'iota'],
   SR25519: ['polkadot'],
   Secp256r1: ['neo'],

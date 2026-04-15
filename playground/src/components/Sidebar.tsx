@@ -64,7 +64,7 @@ const Sidebar = ({ selected, onSelect }: SidebarProps) => {
 
       <div className="p-3 border-t border-surface-300">
         <div className="text-[10px] text-gray-600 text-center">
-          31 chains supported
+          29 chains supported
         </div>
       </div>
     </aside>

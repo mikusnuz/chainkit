@@ -1,6 +1,6 @@
 # ChainKit
 
-Cross-chain abstraction SDK providing a unified API for 31 blockchains. One interface for wallet creation, transaction signing, balance queries, and token operations across all supported chains.
+Cross-chain abstraction SDK providing a unified API for 29 blockchains. One interface for wallet creation, transaction signing, balance queries, and token operations across all supported chains.
 
 ## Installation
 
@@ -67,9 +67,7 @@ await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
 | `@chainkit/starknet` | StarkNet |
 | `@chainkit/stacks` | Stacks |
 | `@chainkit/kaia` | Kaia (prev Klaytn) + KIP-7 tokens |
-| `@chainkit/kaspa` | Kaspa |
 | `@chainkit/eos` | EOS / Vaulta |
-| `@chainkit/nostr` | Nostr Assets |
 | `@chainkit/polkadot` | Polkadot + Substrate parachains |
 | `@chainkit/hedera` | Hedera |
 | `@chainkit/filecoin` | Filecoin |
@@ -492,24 +490,6 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
 
 ---
 
-### @chainkit/kaspa (Secp256k1)
-
-**Native:** KAS
-
-Not listed on Upbit KRW or Binance USDT spot as of April 2026.
-
-**Estimated total: 0 coins (on target exchanges)**
-
----
-
-### @chainkit/nostr (Secp256k1)
-
-Nostr is a relay protocol, not a blockchain. No tradeable tokens on exchanges.
-
-**Estimated total: 0 coins**
-
----
-
 ### @chainkit/hedera (ED25519)
 
 **Native:** HBAR
@@ -661,7 +641,7 @@ Nostr is a relay protocol, not a blockchain. No tradeable tokens on exchanges.
 
 | Category | Curve | Chains |
 |----------|-------|--------|
-| **Secp256k1** | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, Kaspa, EOS, Nostr, Filecoin, VeChain, Theta, Icon |
+| **Secp256k1** | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, EOS, Filecoin, VeChain, Theta, Icon |
 | **ED25519** | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar, Hedera, ICP, Algorand, Tezos, MultiversX, IOTA |
 | **SR25519** | Schnorrkel/Ristretto | Polkadot |
 | **Secp256r1** | NIST P-256 ECDSA | Neo |
