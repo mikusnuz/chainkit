@@ -20,6 +20,18 @@ import { base58check } from '@scure/base'
 const NEO3_ADDRESS_VERSION = 0x35
 
 /**
+ * Well-known Neo N3 contract script hashes (little-endian bytes).
+ * These are the native NEP-17 contracts on Neo N3 mainnet.
+ */
+const NEO_CONTRACT_HASH = 'ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5'
+const GAS_CONTRACT_HASH = 'd2a4cff31913016155e38e474a2c06d08be276cf'
+
+/**
+ * System.Contract.Call interop hash (little-endian, 4 bytes).
+ */
+const SYSCALL_CONTRACT_CALL = new Uint8Array([0x62, 0x7d, 0x5b, 0x52])
+
+/**
  * Base58check encoder/decoder with SHA-256d checksum.
  */
 const b58check = base58check(sha256)
@@ -286,6 +298,198 @@ function reverseBytes(bytes: Uint8Array): Uint8Array {
 }
 
 /**
+ * Decode a Neo3 address back to its 20-byte script hash (little-endian).
+ */
+function addressToScriptHash(address: string): Uint8Array {
+  const decoded = b58check.decode(address)
+  // decoded = version_byte (1) + script_hash (20)
+  if (decoded.length !== 21 || decoded[0] !== NEO3_ADDRESS_VERSION) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_ADDRESS,
+      `Invalid Neo3 address: ${address}`,
+    )
+  }
+  return decoded.slice(1)
+}
+
+/**
+ * Encode an integer value using NeoVM push opcodes.
+ *
+ * NeoVM integer push rules:
+ * - -1:       PUSHM1 (0x4f)
+ * - 0..16:    PUSH0..PUSH16 (0x10..0x20)
+ * - Otherwise: PUSHINT8/16/32/64/128/256 with little-endian two's complement bytes
+ */
+function emitPushInteger(value: bigint): Uint8Array {
+  if (value === -1n) {
+    return new Uint8Array([0x4f]) // PUSHM1
+  }
+  if (value >= 0n && value <= 16n) {
+    return new Uint8Array([0x10 + Number(value)]) // PUSH0..PUSH16
+  }
+
+  // Determine minimum byte length for two's complement
+  const parts: number[] = []
+  let v = value
+  if (value >= 0n) {
+    while (v > 0n) {
+      parts.push(Number(v & 0xffn))
+      v >>= 8n
+    }
+    // If high bit set, add zero padding for positive numbers
+    if (parts.length > 0 && (parts[parts.length - 1] & 0x80) !== 0) {
+      parts.push(0)
+    }
+  } else {
+    // Negative: fill with two's complement
+    while (v < -1n) {
+      parts.push(Number(v & 0xffn))
+      v >>= 8n
+    }
+    parts.push(0xff) // sign byte
+  }
+
+  // Round up to valid NeoVM integer sizes: 1, 2, 4, 8, 16, 32
+  let byteLen = parts.length
+  if (byteLen <= 1) byteLen = 1
+  else if (byteLen <= 2) byteLen = 2
+  else if (byteLen <= 4) byteLen = 4
+  else if (byteLen <= 8) byteLen = 8
+  else if (byteLen <= 16) byteLen = 16
+  else byteLen = 32
+
+  // Opcode for integer size: PUSHINT8=0x00, PUSHINT16=0x01, PUSHINT32=0x02,
+  // PUSHINT64=0x03, PUSHINT128=0x04, PUSHINT256=0x05
+  let opcode: number
+  switch (byteLen) {
+    case 1: opcode = 0x00; break   // PUSHINT8
+    case 2: opcode = 0x01; break   // PUSHINT16
+    case 4: opcode = 0x02; break   // PUSHINT32
+    case 8: opcode = 0x03; break   // PUSHINT64
+    case 16: opcode = 0x04; break  // PUSHINT128
+    default: opcode = 0x05; break  // PUSHINT256
+  }
+
+  const buf = new Uint8Array(1 + byteLen)
+  buf[0] = opcode
+  // Fill with little-endian value bytes; padding is 0x00 for positive, 0xff for negative
+  const padByte = value >= 0n ? 0 : 0xff
+  for (let i = 0; i < byteLen; i++) {
+    buf[1 + i] = i < parts.length ? parts[i] : padByte
+  }
+  return buf
+}
+
+/**
+ * Emit PUSHDATA for raw byte arrays (script hashes, strings).
+ * Uses the smallest PUSHDATA variant that fits.
+ *
+ * - 1..75 bytes: PUSHDATA1 (0x0c) + uint8 length
+ * - 76..255 bytes: PUSHDATA1 (0x0c) + uint8 length
+ * - 256..65535 bytes: PUSHDATA2 (0x0d) + uint16 LE length
+ */
+function emitPushData(data: Uint8Array): Uint8Array {
+  if (data.length <= 0xff) {
+    const buf = new Uint8Array(2 + data.length)
+    buf[0] = 0x0c // PUSHDATA1
+    buf[1] = data.length
+    buf.set(data, 2)
+    return buf
+  } else if (data.length <= 0xffff) {
+    const buf = new Uint8Array(3 + data.length)
+    buf[0] = 0x0d // PUSHDATA2
+    buf[1] = data.length & 0xff
+    buf[2] = (data.length >> 8) & 0xff
+    buf.set(data, 3)
+    return buf
+  }
+  throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Data too large for PUSHDATA')
+}
+
+/**
+ * Build a NEP-17 transfer NeoVM script.
+ *
+ * The NeoVM calling convention for System.Contract.Call:
+ *   1. Push arguments in REVERSE order onto the stack
+ *   2. Push arg count, then PACK into an array
+ *   3. Push CallFlags (0x0f = All)
+ *   4. Push method name as string
+ *   5. Push contract hash (20 bytes)
+ *   6. SYSCALL System.Contract.Call
+ *
+ * For NEP-17 transfer(from, to, amount, data):
+ *   Arguments reversed: data(null), amount, to, from
+ *   Then: PUSH4, PACK, PUSHINT(0x0f), PUSHDATA("transfer"), PUSHDATA(contract), SYSCALL
+ */
+function buildTransferScript(
+  contractHash: Uint8Array,
+  fromHash: Uint8Array,
+  toHash: Uint8Array,
+  amount: bigint,
+): Uint8Array {
+  const parts: Uint8Array[] = []
+
+  // Push arguments in reverse order for the transfer(from, to, amount, data) method
+  // Arg 4 (data): null - PUSHNULL opcode
+  parts.push(new Uint8Array([0x0b])) // PUSHNULL
+
+  // Arg 3 (amount): integer
+  parts.push(emitPushInteger(amount))
+
+  // Arg 2 (to): 20-byte script hash
+  parts.push(emitPushData(toHash))
+
+  // Arg 1 (from): 20-byte script hash
+  parts.push(emitPushData(fromHash))
+
+  // Push arg count (4) and PACK
+  parts.push(new Uint8Array([0x14])) // PUSH4
+  parts.push(new Uint8Array([0xc1])) // PACK
+
+  // Push CallFlags.All (0x0f)
+  parts.push(new Uint8Array([0x1f])) // PUSH15 (0x0f = 15)
+
+  // Push method name "transfer"
+  const methodBytes = new TextEncoder().encode('transfer')
+  parts.push(emitPushData(methodBytes))
+
+  // Push contract hash (20 bytes)
+  parts.push(emitPushData(contractHash))
+
+  // SYSCALL System.Contract.Call (0x41 + 4-byte interop hash)
+  const syscall = new Uint8Array(5)
+  syscall[0] = 0x41 // SYSCALL
+  syscall.set(SYSCALL_CONTRACT_CALL, 1)
+  parts.push(syscall)
+
+  return concatBytes(...parts)
+}
+
+/**
+ * Resolve the contract hash for a given asset name.
+ * Supports "NEO", "GAS", or a raw hex script hash (with or without 0x prefix).
+ */
+function resolveContractHash(asset: string): Uint8Array {
+  const upper = asset.toUpperCase()
+  if (upper === 'NEO') {
+    return reverseBytes(hexToBytes(NEO_CONTRACT_HASH))
+  }
+  if (upper === 'GAS') {
+    return reverseBytes(hexToBytes(GAS_CONTRACT_HASH))
+  }
+  // Treat as a raw hex script hash (big-endian 0x-prefixed or plain)
+  const cleaned = stripHexPrefix(asset)
+  if (cleaned.length !== 40) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid contract hash: ${asset}`,
+    )
+  }
+  // Convert from big-endian display format to little-endian internal format
+  return reverseBytes(hexToBytes(cleaned))
+}
+
+/**
  * Neo N3 signer implementing the ChainSigner interface.
  * Uses ECDSA on the P-256 (secp256r1/NIST P-256) curve.
  * Supports BIP39 mnemonic generation and SLIP-0010 key derivation.
@@ -368,13 +572,31 @@ export class NeoSigner implements ChainSigner {
     const systemFee = BigInt(tx.fee?.systemFee ?? '0')
     const networkFee = BigInt(tx.fee?.networkFee ?? '0')
     const validUntilBlock = Number(tx.extra?.validUntilBlock ?? 0)
-    const script = tx.data ? hexToBytes(stripHexPrefix(tx.data)) : new Uint8Array([])
     const networkMagic = Number(tx.extra?.networkMagic ?? 860833102) // Neo3 mainnet magic
 
     // Build signer account (script hash of the sender)
     const compressedPubKey = p256.getPublicKey(pkBytes, true)
-    const verificationScript = buildVerificationScript(compressedPubKey)
-    const senderScriptHash = getScriptHash(verificationScript)
+    const vScript = buildVerificationScript(compressedPubKey)
+    const senderScriptHash = getScriptHash(vScript)
+
+    // Build the NeoVM script
+    let script: Uint8Array
+    if (tx.data) {
+      // Raw script provided directly
+      script = hexToBytes(stripHexPrefix(tx.data))
+    } else if (tx.to && tx.value) {
+      // Build a NEP-17 transfer script from to/value/asset fields
+      const asset = (tx.extra?.asset as string) ?? 'GAS'
+      const contractHash = resolveContractHash(asset)
+      const toScriptHash = addressToScriptHash(tx.to)
+      const amount = BigInt(tx.value)
+      script = buildTransferScript(contractHash, senderScriptHash, toScriptHash, amount)
+    } else {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        'Transaction must have either data (raw script) or to + value (NEP-17 transfer)',
+      )
+    }
 
     // Serialize transaction (unsigned portion)
     const txData = concatBytes(
@@ -412,7 +634,7 @@ export class NeoSigner implements ChainSigner {
       txData,
       encodeVarInt(1),                                   // witnesses count = 1
       encodeVarBytes(invocationScript),                  // invocation script
-      encodeVarBytes(verificationScript),                // verification script
+      encodeVarBytes(vScript),                           // verification script
     )
 
     return addHexPrefix(bytesToHex(signedTx))

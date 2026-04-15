@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { VeChainSigner, VECHAIN_HD_PATH } from './signer.js'
+import { hexToBytes, bytesToHex } from '@noble/hashes/utils'
 
 const TEST_MNEMONIC =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
@@ -148,7 +149,7 @@ describe('VeChainSigner', () => {
       )
 
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
-      // Should be substantial length (RLP encoded body + 65 byte signature)
+      // Should be substantial length (RLP encoded body + 65 byte signature within RLP)
       expect(signedTx.length).toBeGreaterThan(100)
     })
 
@@ -175,6 +176,150 @@ describe('VeChainSigner', () => {
       const sig1 = await signer.signTransaction(tx, privateKey)
       const sig2 = await signer.signTransaction(tx, privateKey)
       expect(sig1).toBe(sig2)
+    })
+
+    it('should generate random nonce when not provided', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
+      const address = signer.getAddress(privateKey)
+
+      const tx = {
+        from: address,
+        to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
+        value: '1000000000000000000',
+        extra: {
+          chainTag: 0x27,
+          blockRef: '0x00000000aabbccdd',
+          expiration: 720,
+          gasPriceCoef: 0,
+          // nonce intentionally omitted
+        },
+        fee: {
+          gas: '21000',
+        },
+      }
+
+      const sig1 = await signer.signTransaction(tx, privateKey)
+      const sig2 = await signer.signTransaction(tx, privateKey)
+      // Different random nonces should produce different transactions
+      expect(sig1).not.toBe(sig2)
+    })
+
+    it('should include signature within the RLP structure', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
+      const address = signer.getAddress(privateKey)
+
+      const signedTx = await signer.signTransaction(
+        {
+          from: address,
+          to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
+          value: '0',
+          extra: {
+            chainTag: 0x27,
+            blockRef: '0x00000000aabbccdd',
+            expiration: 720,
+            gasPriceCoef: 0,
+            nonce: '0xdeadbeef',
+          },
+          fee: {
+            gas: '21000',
+          },
+        },
+        privateKey,
+      )
+
+      // The signed tx should start with an RLP list prefix
+      // RLP list prefix: if total length > 55, first byte is 0xf7 + len_of_len
+      // For smaller tx, first byte is 0xc0 + length (0xc0-0xf7 range)
+      const txBytes = hexToBytes(signedTx.slice(2))
+      const firstByte = txBytes[0]
+      // Must be a valid RLP list prefix (>= 0xc0)
+      expect(firstByte).toBeGreaterThanOrEqual(0xc0)
+    })
+
+    it('should handle zero-value transfers', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
+      const address = signer.getAddress(privateKey)
+
+      const signedTx = await signer.signTransaction(
+        {
+          from: address,
+          to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
+          value: '0',
+          extra: {
+            chainTag: 0x27,
+            blockRef: '0x00000000aabbccdd',
+            expiration: 720,
+            gasPriceCoef: 0,
+            nonce: '0x1',
+          },
+          fee: {
+            gas: '21000',
+          },
+        },
+        privateKey,
+      )
+
+      expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
+      expect(signedTx.length).toBeGreaterThan(100)
+    })
+
+    it('should handle contract call data', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
+      const address = signer.getAddress(privateKey)
+
+      const signedTx = await signer.signTransaction(
+        {
+          from: address,
+          to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
+          value: '0',
+          data: '0xa9059cbb0000000000000000000000007567d83b7b8d80addcb281a71d54fc7b3364ffed0000000000000000000000000000000000000000000000000de0b6b3a7640000',
+          extra: {
+            chainTag: 0x27,
+            blockRef: '0x00000000aabbccdd',
+            expiration: 720,
+            gasPriceCoef: 128,
+            nonce: '0xabc123',
+          },
+          fee: {
+            gas: '50000',
+          },
+        },
+        privateKey,
+      )
+
+      expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
+      // Contract calls should be longer than simple transfers
+      expect(signedTx.length).toBeGreaterThan(200)
+    })
+
+    it('should handle dependsOn field', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
+      const address = signer.getAddress(privateKey)
+      const dependencyTxId = '0x' + 'ab'.repeat(32)
+
+      const signedTx = await signer.signTransaction(
+        {
+          from: address,
+          to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
+          value: '1000000000000000000',
+          extra: {
+            chainTag: 0x27,
+            blockRef: '0x00000000aabbccdd',
+            expiration: 720,
+            gasPriceCoef: 0,
+            nonce: '0x1',
+            dependsOn: dependencyTxId,
+          },
+          fee: {
+            gas: '21000',
+          },
+        },
+        privateKey,
+      )
+
+      expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
+      // With dependsOn, the tx should be longer
+      expect(signedTx.length).toBeGreaterThan(100)
     })
   })
 })

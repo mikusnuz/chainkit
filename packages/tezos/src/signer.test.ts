@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { TezosSigner } from './signer.js'
+import {
+  TezosSigner,
+  zarithEncode,
+  decodeBlockHash,
+  decodeTz1Address,
+  encodeDestination,
+  forgeTransaction,
+} from './signer.js'
+import { bytesToHex } from '@noble/hashes/utils'
 
 describe('TezosSigner', () => {
   const signer = new TezosSigner()
@@ -93,23 +101,81 @@ describe('TezosSigner', () => {
   })
 
   describe('signTransaction', () => {
-    it('should sign a transaction and return a hex signature', async () => {
+    it('should sign a pre-forged transaction (legacy mode) and return forged + signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
+      const mockForgedHex = '00'.repeat(32)
 
       const tx = {
         from: signer.getAddress(privateKey),
         to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
-        value: '1000000', // 1 XTZ in mutez
-        data: '0x' + '00'.repeat(32), // mock forged operation bytes
+        value: '1000000',
+        data: '0x' + mockForgedHex,
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction(tx, privateKey)
 
-      // ED25519 signature is 64 bytes = 128 hex chars + 0x prefix
-      expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
+      // Result = forged bytes (32) + signature (64) = 96 bytes = 192 hex chars + 0x prefix
+      expect(result).toMatch(/^0x[0-9a-f]+$/)
+      const rawHex = result.slice(2)
+      // 32 bytes forged + 64 bytes sig = 96 bytes = 192 hex chars
+      expect(rawHex.length).toBe(192)
+      // First 64 hex chars should be our original forged bytes
+      expect(rawHex.slice(0, 64)).toBe(mockForgedHex)
     })
 
-    it('should throw if no data is provided', async () => {
+    it('should sign a structured transaction (forging mode)', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
+      const fromAddr = signer.getAddress(privateKey)
+
+      const tx = {
+        from: fromAddr,
+        to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        value: '1000000',
+        extra: {
+          branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+          counter: '1',
+          gasLimit: '10300',
+          storageLimit: '0',
+          fee: '1000',
+        },
+      }
+
+      const result = await signer.signTransaction(tx, privateKey)
+
+      // Should return forged + signature as hex
+      expect(result).toMatch(/^0x[0-9a-f]+$/)
+      const rawBytes = result.slice(2)
+      // Must be longer than 128 hex chars (64-byte signature alone)
+      // Forged transaction is: 32 (branch) + 1 (tag) + 21 (source) + variable zarith fields + 22 (dest) + 1 (params flag) + 64 (sig)
+      expect(rawBytes.length).toBeGreaterThan(128)
+      // Last 128 hex chars are the 64-byte ED25519 signature
+      const sigHex = rawBytes.slice(-128)
+      expect(sigHex.length).toBe(128)
+    })
+
+    it('should produce deterministic results for structured transactions', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
+      const fromAddr = signer.getAddress(privateKey)
+
+      const tx = {
+        from: fromAddr,
+        to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        value: '500000',
+        extra: {
+          branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+          counter: '5',
+          gasLimit: '10300',
+          storageLimit: '257',
+          fee: '1500',
+        },
+      }
+
+      const result1 = await signer.signTransaction(tx, privateKey)
+      const result2 = await signer.signTransaction(tx, privateKey)
+      expect(result1).toBe(result2)
+    })
+
+    it('should throw if neither data nor extra.branch is provided', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
 
       await expect(
@@ -117,7 +183,7 @@ describe('TezosSigner', () => {
           { from: 'tz1...', to: 'tz1...', value: '0' },
           privateKey,
         ),
-      ).rejects.toThrow('forged operation bytes')
+      ).rejects.toThrow('extra.branch')
     })
   })
 
@@ -164,6 +230,249 @@ describe('TezosSigner', () => {
       // Verify it is stable (snapshot-like test)
       const address2 = signer.getAddress(privateKey)
       expect(address).toBe(address2)
+    })
+  })
+})
+
+describe('Tezos binary encoding utilities', () => {
+  describe('zarithEncode', () => {
+    it('should encode 0', () => {
+      const result = zarithEncode(0)
+      expect(bytesToHex(result)).toBe('00')
+    })
+
+    it('should encode small values (< 128) as single byte', () => {
+      expect(bytesToHex(zarithEncode(1))).toBe('01')
+      expect(bytesToHex(zarithEncode(100))).toBe('64')
+      expect(bytesToHex(zarithEncode(127))).toBe('7f')
+    })
+
+    it('should encode 128 as two bytes', () => {
+      // 128 = 0b10000000 -> [0x80 | 0x00, 0x01] = [0x80, 0x01]
+      expect(bytesToHex(zarithEncode(128))).toBe('8001')
+    })
+
+    it('should encode larger values', () => {
+      // 1000 = 0b1111101000
+      // First 7 bits: 1101000 = 0x68, with continuation: 0xe8
+      // Next 7 bits: 0000111 = 0x07
+      expect(bytesToHex(zarithEncode(1000))).toBe('e807')
+    })
+
+    it('should encode 10300 (common gas_limit)', () => {
+      // 10300 = 0x2840 + 0x3c = ...
+      const encoded = zarithEncode(10300)
+      // Verify round-trip by decoding
+      let value = 0n
+      let shift = 0n
+      for (const byte of encoded) {
+        value |= BigInt(byte & 0x7f) << shift
+        shift += 7n
+      }
+      expect(value).toBe(10300n)
+    })
+
+    it('should handle bigint values', () => {
+      const result = zarithEncode(1000000n)
+      // Verify round-trip
+      let value = 0n
+      let shift = 0n
+      for (const byte of result) {
+        value |= BigInt(byte & 0x7f) << shift
+        shift += 7n
+      }
+      expect(value).toBe(1000000n)
+    })
+  })
+
+  describe('decodeBlockHash', () => {
+    it('should decode a genesis block hash to 32 bytes', () => {
+      const raw = decodeBlockHash('BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2')
+      expect(raw.length).toBe(32)
+    })
+
+    it('should produce deterministic results', () => {
+      const hash = 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2'
+      const raw1 = decodeBlockHash(hash)
+      const raw2 = decodeBlockHash(hash)
+      expect(bytesToHex(raw1)).toBe(bytesToHex(raw2))
+    })
+  })
+
+  describe('decodeTz1Address', () => {
+    it('should decode a tz1 address to 21 bytes (tag + hash)', () => {
+      const raw = decodeTz1Address('tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb')
+      expect(raw.length).toBe(21)
+      // First byte is tag 0x00 for tz1
+      expect(raw[0]).toBe(0x00)
+    })
+
+    it('should throw for non-tz1 addresses', () => {
+      expect(() => decodeTz1Address('tz2BFTyPeYRzxd5aiBchbXN3WCZhx7BqbMBq')).toThrow('tz1')
+    })
+  })
+
+  describe('encodeDestination', () => {
+    it('should encode a tz1 address as 22 bytes', () => {
+      const result = encodeDestination('tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb')
+      expect(result.length).toBe(22)
+      // First byte: 0x00 (implicit)
+      expect(result[0]).toBe(0x00)
+    })
+  })
+
+  describe('forgeTransaction', () => {
+    it('should forge a basic transaction', () => {
+      const forged = forgeTransaction({
+        branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+        source: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        destination: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        amount: '1000000',
+        fee: '1000',
+        counter: '1',
+        gasLimit: '10300',
+        storageLimit: '0',
+      })
+
+      // Should start with 32 bytes of branch
+      expect(forged.length).toBeGreaterThan(32 + 1 + 21 + 22 + 1)
+
+      // Byte at offset 32 should be transaction tag (0x6c)
+      expect(forged[32]).toBe(0x6c)
+    })
+
+    it('should produce deterministic output', () => {
+      const params = {
+        branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+        source: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        destination: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        amount: '500000',
+        fee: '1500',
+        counter: '42',
+        gasLimit: '10300',
+        storageLimit: '257',
+      }
+
+      const forged1 = forgeTransaction(params)
+      const forged2 = forgeTransaction(params)
+      expect(bytesToHex(forged1)).toBe(bytesToHex(forged2))
+    })
+
+    it('should encode zarith fields correctly within the forged output', () => {
+      const forged = forgeTransaction({
+        branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+        source: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        destination: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        amount: '0',
+        fee: '0',
+        counter: '1',
+        gasLimit: '0',
+        storageLimit: '0',
+      })
+
+      // branch(32) + tag(1) + source(21) = offset 54
+      // At offset 54: fee=0 (1 byte 0x00)
+      expect(forged[54]).toBe(0x00) // fee = 0
+      // offset 55: counter=1 (1 byte 0x01)
+      expect(forged[55]).toBe(0x01) // counter = 1
+      // offset 56: gasLimit=0 (1 byte 0x00)
+      expect(forged[56]).toBe(0x00) // gasLimit = 0
+      // offset 57: storageLimit=0 (1 byte 0x00)
+      expect(forged[57]).toBe(0x00) // storageLimit = 0
+      // offset 58: amount=0 (1 byte 0x00)
+      expect(forged[58]).toBe(0x00) // amount = 0
+      // offset 59..80: destination (22 bytes)
+      // offset 81: params flag = 0x00
+      expect(forged[forged.length - 1]).toBe(0x00) // no parameters
+    })
+  })
+
+  describe('end-to-end: forge + sign', () => {
+    const signer = new TezosSigner()
+    const TEST_MNEMONIC =
+      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+    const TEZOS_PATH = "m/44'/1729'/0'/0'"
+
+    it('should forge and sign a complete transaction via signTransaction', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
+      const fromAddr = signer.getAddress(privateKey)
+
+      const tx = {
+        from: fromAddr,
+        to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        value: '1000000',
+        extra: {
+          branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+          counter: '1',
+          gasLimit: '10300',
+          storageLimit: '0',
+          fee: '1000',
+        },
+      }
+
+      const signed = await signer.signTransaction(tx, privateKey)
+      const rawHex = signed.slice(2) // remove 0x
+      const rawBytes = new Uint8Array(rawHex.match(/.{2}/g)!.map(b => parseInt(b, 16)))
+
+      // The result should be forged bytes + 64-byte signature
+      const sigBytes = rawBytes.slice(-64)
+      const forgedBytes = rawBytes.slice(0, -64)
+
+      // Forged bytes should start with branch (32 bytes) + tag (0x6c)
+      expect(forgedBytes[32]).toBe(0x6c)
+      expect(sigBytes.length).toBe(64)
+
+      // Signature should not be all zeros
+      const allZeros = sigBytes.every(b => b === 0)
+      expect(allZeros).toBe(false)
+    })
+
+    it('should match manual forge + sign', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
+      const fromAddr = signer.getAddress(privateKey)
+
+      const forgeParams = {
+        branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+        source: fromAddr,
+        destination: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        amount: '1000000',
+        fee: '1000',
+        counter: '1',
+        gasLimit: '10300',
+        storageLimit: '0',
+      }
+
+      const forgedManual = forgeTransaction(forgeParams)
+      const forgedHex = bytesToHex(forgedManual)
+
+      // Now sign using legacy mode with the manually forged bytes
+      const legacyTx = {
+        from: fromAddr,
+        to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        value: '1000000',
+        data: ('0x' + forgedHex) as `0x${string}`,
+      }
+
+      const legacyResult = await signer.signTransaction(legacyTx, privateKey)
+
+      // And sign using structured mode
+      const structuredTx = {
+        from: fromAddr,
+        to: 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb',
+        value: '1000000',
+        extra: {
+          branch: 'BLockGenesisGenesisGenesisGenesisGenesisf79b5d1CoW2',
+          counter: '1',
+          gasLimit: '10300',
+          storageLimit: '0',
+          fee: '1000',
+        },
+      }
+
+      const structuredResult = await signer.signTransaction(structuredTx, privateKey)
+
+      // Both should produce the same result
+      expect(structuredResult).toBe(legacyResult)
     })
   })
 })

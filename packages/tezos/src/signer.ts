@@ -41,6 +41,22 @@ const EDPK_PREFIX = new Uint8Array([0x0d, 0x0f, 0x25, 0xd9])
 const EDSIG_PREFIX = new Uint8Array([0x09, 0xf5, 0xcd, 0x86, 0x12])
 
 /**
+ * Tezos block hash prefix bytes: \x01\x34
+ * Used for base58check encoding of block hashes (B...).
+ */
+const BLOCK_HASH_PREFIX = new Uint8Array([0x01, 0x34])
+
+/**
+ * Tezos operation tag for transaction operations.
+ */
+const TRANSACTION_TAG = 0x6c
+
+/**
+ * Watermark byte for generic operations (used before hashing for signing).
+ */
+const GENERIC_WATERMARK = 0x03
+
+/**
  * Strip the '0x' prefix from a hex string if present.
  */
 function stripHexPrefix(hex: string): string {
@@ -52,6 +68,225 @@ function stripHexPrefix(hex: string): string {
  */
 function addHexPrefix(hex: string): string {
   return hex.startsWith('0x') ? hex : `0x${hex}`
+}
+
+// ===== Zarith encoding =====
+
+/**
+ * Encode an unsigned integer using Tezos zarith (variable-length) encoding.
+ * Each byte uses 7 bits for data and 1 bit (MSB) as continuation flag.
+ * Accepts number, bigint, or string (parsed as decimal).
+ */
+function zarithEncode(value: string | number | bigint): Uint8Array {
+  const bytes: number[] = []
+  let v = typeof value === 'bigint' ? value : BigInt(value)
+  if (v < 0n) {
+    throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'zarithEncode: value must be non-negative')
+  }
+  // Special case: zero
+  if (v === 0n) {
+    bytes.push(0)
+    return new Uint8Array(bytes)
+  }
+  while (v >= 0x80n) {
+    bytes.push(Number(v & 0x7fn) | 0x80)
+    v >>= 7n
+  }
+  bytes.push(Number(v))
+  return new Uint8Array(bytes)
+}
+
+// ===== Base58check decode helpers =====
+
+/**
+ * Decode a base58check-encoded string and remove a known prefix.
+ * Returns the raw bytes after the prefix.
+ */
+function b58cDecodeWithPrefix(encoded: string, prefix: Uint8Array): Uint8Array {
+  const decoded = b58c.decode(encoded)
+  // Verify prefix matches
+  for (let i = 0; i < prefix.length; i++) {
+    if (decoded[i] !== prefix[i]) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        `base58check prefix mismatch: expected ${bytesToHex(prefix)}, got ${bytesToHex(decoded.slice(0, prefix.length))}`,
+      )
+    }
+  }
+  return decoded.slice(prefix.length)
+}
+
+/**
+ * Decode a Tezos block hash (B...) to its raw 32 bytes.
+ */
+function decodeBlockHash(blockHash: string): Uint8Array {
+  const raw = b58cDecodeWithPrefix(blockHash, BLOCK_HASH_PREFIX)
+  if (raw.length !== 32) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid block hash: expected 32 bytes after prefix, got ${raw.length}`,
+    )
+  }
+  return raw
+}
+
+/**
+ * Decode a tz1 address to its 20-byte public key hash.
+ * Returns a 21-byte array: 1 byte tag (0x00 for tz1) + 20 bytes hash.
+ */
+function decodeTz1Address(address: string): Uint8Array {
+  if (!address.startsWith('tz1')) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Only tz1 addresses are supported, got: ${address}`,
+    )
+  }
+  const pkHash = b58cDecodeWithPrefix(address, TZ1_PREFIX)
+  if (pkHash.length !== 20) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid tz1 address: expected 20-byte hash, got ${pkHash.length}`,
+    )
+  }
+  // Tag 0x00 = ED25519 (tz1)
+  const result = new Uint8Array(21)
+  result[0] = 0x00
+  result.set(pkHash, 1)
+  return result
+}
+
+/**
+ * Encode a Tezos implicit address (tz1/tz2/tz3) as a 22-byte destination.
+ * Format: 0x00 (implicit) + address tag + 20-byte hash + 0x00 (padding).
+ *
+ * For KT1 contract addresses: 0x01 + 20-byte hash + 0x00 (padding).
+ */
+function encodeDestination(address: string): Uint8Array {
+  const result = new Uint8Array(22)
+
+  if (address.startsWith('KT1')) {
+    // Contract address prefix: \x02\x5a\x79
+    const KT1_PREFIX = new Uint8Array([0x02, 0x5a, 0x79])
+    const hash = b58cDecodeWithPrefix(address, KT1_PREFIX)
+    if (hash.length !== 20) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        `Invalid KT1 address: expected 20-byte hash, got ${hash.length}`,
+      )
+    }
+    result[0] = 0x01 // contract tag
+    result.set(hash, 1)
+    result[21] = 0x00 // padding
+  } else if (address.startsWith('tz1')) {
+    const decoded = decodeTz1Address(address) // 21 bytes: tag + hash
+    result[0] = 0x00 // implicit tag
+    result.set(decoded, 1) // tag (0x00) + 20-byte hash
+  } else if (address.startsWith('tz2')) {
+    // tz2 prefix: \x06\xa1\xa1
+    const TZ2_PREFIX = new Uint8Array([0x06, 0xa1, 0xa1])
+    const hash = b58cDecodeWithPrefix(address, TZ2_PREFIX)
+    result[0] = 0x00 // implicit
+    result[1] = 0x01 // secp256k1 tag
+    result.set(hash, 2)
+  } else if (address.startsWith('tz3')) {
+    // tz3 prefix: \x06\xa1\xa4
+    const TZ3_PREFIX = new Uint8Array([0x06, 0xa1, 0xa4])
+    const hash = b58cDecodeWithPrefix(address, TZ3_PREFIX)
+    result[0] = 0x00 // implicit
+    result[1] = 0x02 // p256 tag
+    result.set(hash, 2)
+  } else {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Unsupported destination address format: ${address}`,
+    )
+  }
+
+  return result
+}
+
+// ===== Operation forging =====
+
+/**
+ * Parameters for forging a Tezos transaction operation.
+ */
+export interface TezosForgeParams {
+  /** Block hash to use as branch (B...) */
+  branch: string
+  /** Source tz1 address */
+  source: string
+  /** Destination address (tz1/tz2/tz3/KT1) */
+  destination: string
+  /** Amount in mutez */
+  amount: string | number | bigint
+  /** Fee in mutez */
+  fee: string | number | bigint
+  /** Account counter (nonce) */
+  counter: string | number | bigint
+  /** Gas limit */
+  gasLimit: string | number | bigint
+  /** Storage limit */
+  storageLimit: string | number | bigint
+  /** Whether to include parameters (default: false / no params) */
+  parameters?: boolean
+}
+
+/**
+ * Forge a Tezos transaction operation into binary bytes.
+ *
+ * Binary format:
+ *   branch (32 bytes)
+ *   + operation tag (1 byte, 0x6c for transaction)
+ *   + source (21 bytes: tag + 20-byte hash)
+ *   + fee (zarith)
+ *   + counter (zarith)
+ *   + gas_limit (zarith)
+ *   + storage_limit (zarith)
+ *   + amount (zarith)
+ *   + destination (22 bytes)
+ *   + parameters flag (1 byte: 0x00 = none)
+ */
+function forgeTransaction(params: TezosForgeParams): Uint8Array {
+  const branch = decodeBlockHash(params.branch)
+  const source = decodeTz1Address(params.source)
+  const fee = zarithEncode(params.fee)
+  const counter = zarithEncode(params.counter)
+  const gasLimit = zarithEncode(params.gasLimit)
+  const storageLimit = zarithEncode(params.storageLimit)
+  const amount = zarithEncode(params.amount)
+  const destination = encodeDestination(params.destination)
+
+  // No parameters (0x00)
+  const paramsFlag = new Uint8Array([0x00])
+
+  // Calculate total size
+  const totalSize =
+    branch.length +       // 32
+    1 +                   // operation tag
+    source.length +       // 21
+    fee.length +          // variable
+    counter.length +      // variable
+    gasLimit.length +     // variable
+    storageLimit.length + // variable
+    amount.length +       // variable
+    destination.length +  // 22
+    paramsFlag.length     // 1
+
+  const forged = new Uint8Array(totalSize)
+  let offset = 0
+
+  forged.set(branch, offset); offset += branch.length
+  forged[offset] = TRANSACTION_TAG; offset += 1
+  forged.set(source, offset); offset += source.length
+  forged.set(fee, offset); offset += fee.length
+  forged.set(counter, offset); offset += counter.length
+  forged.set(gasLimit, offset); offset += gasLimit.length
+  forged.set(storageLimit, offset); offset += storageLimit.length
+  forged.set(amount, offset); offset += amount.length
+  forged.set(destination, offset); offset += destination.length
+  forged.set(paramsFlag, offset)
+
+  return forged
 }
 
 /**
@@ -242,9 +477,22 @@ export class TezosSigner implements ChainSigner {
 
   /**
    * Sign a Tezos transaction.
-   * The transaction data is expected to be a hex-encoded forged operation in tx.data.
-   * The operation bytes are prefixed with 0x03 watermark before signing.
-   * Returns the ED25519 signature as a hex string.
+   *
+   * Supports two modes:
+   *
+   * 1. **Structured forging** (recommended): Pass Tezos operation fields via `tx.extra`:
+   *    - `tx.extra.branch` (string): Block hash (B...)
+   *    - `tx.extra.counter` (string): Account counter/nonce
+   *    - `tx.extra.gasLimit` (string): Gas limit (default: "10300")
+   *    - `tx.extra.storageLimit` (string): Storage limit (default: "0")
+   *    - `tx.from`: Source tz1 address
+   *    - `tx.to`: Destination address (tz1/tz2/tz3/KT1)
+   *    - `tx.value`: Amount in mutez
+   *    - `tx.fee`: `{ amount: string }` or the fee field from `tx.extra.fee`
+   *
+   * 2. **Pre-forged bytes** (legacy): Pass hex-encoded forged operation in `tx.data`.
+   *
+   * Returns hex-encoded: forged_operation_bytes + ED25519_signature (64 bytes).
    */
   async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
@@ -256,26 +504,59 @@ export class TezosSigner implements ChainSigner {
       )
     }
 
-    if (!tx.data) {
+    let operationBytes: Uint8Array
+
+    if (tx.extra?.branch) {
+      // Structured forging mode: forge the operation from tx fields
+      const branch = tx.extra.branch as string
+      const counter = tx.extra.counter as string
+      const gasLimit = (tx.extra.gasLimit as string) ?? '10300'
+      const storageLimit = (tx.extra.storageLimit as string) ?? '0'
+      const fee = tx.fee?.amount ?? (tx.extra.fee as string) ?? '0'
+
+      if (!tx.from || !tx.to || !counter) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Structured forging requires: from, to, value, extra.branch, extra.counter',
+        )
+      }
+
+      operationBytes = forgeTransaction({
+        branch,
+        source: tx.from,
+        destination: tx.to,
+        amount: tx.value ?? '0',
+        fee,
+        counter,
+        gasLimit,
+        storageLimit,
+      })
+    } else if (tx.data) {
+      // Legacy mode: use pre-forged bytes
+      operationBytes = hexToBytes(stripHexPrefix(tx.data))
+    } else {
       throw new ChainKitError(
         ErrorCode.INVALID_PARAMS,
-        'Transaction data (forged operation bytes) is required for Tezos signing',
+        'Transaction requires either extra.branch (for forging) or data (pre-forged operation bytes)',
       )
     }
-
-    const operationBytes = hexToBytes(stripHexPrefix(tx.data))
 
     // Tezos signs blake2b-256 of (0x03 || operation_bytes)
     // 0x03 is the watermark for generic operations
     const watermarked = new Uint8Array(1 + operationBytes.length)
-    watermarked[0] = 0x03
+    watermarked[0] = GENERIC_WATERMARK
     watermarked.set(operationBytes, 1)
     const hash = blake2b(watermarked, { dkLen: 32 })
 
     // Sign with ED25519
     const signature = ed25519.sign(hash, pkBytes)
 
-    return addHexPrefix(bytesToHex(signature))
+    // Return forged bytes + 64-byte signature
+    const result = new Uint8Array(operationBytes.length + signature.length)
+    result.set(operationBytes)
+    result.set(signature, operationBytes.length)
+
+    return addHexPrefix(bytesToHex(result))
   }
 
   /**
@@ -305,4 +586,13 @@ export class TezosSigner implements ChainSigner {
 }
 
 // Re-export utility functions for use by provider or external consumers
-export { publicKeyToTz1Address, encodePublicKey, encodeSignature }
+export {
+  publicKeyToTz1Address,
+  encodePublicKey,
+  encodeSignature,
+  forgeTransaction,
+  zarithEncode,
+  decodeBlockHash,
+  decodeTz1Address,
+  encodeDestination,
+}

@@ -8,9 +8,10 @@ import {
 } from '@chainkit/core'
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
+import { blake2b } from '@noble/hashes/blake2b'
 import { hmac } from '@noble/hashes/hmac'
 import { sha256 } from '@noble/hashes/sha256'
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
+import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils'
 import * as secp256k1 from '@noble/secp256k1'
 
 // @noble/secp256k1 v2 requires manually setting the hmac function
@@ -145,41 +146,27 @@ function hexToMinimalBytes(hex: string): Uint8Array {
 }
 
 /**
- * RLP encode a list of items where each item is already a Uint8Array.
- * Used for encoding VeChain clauses as nested lists.
+ * Convert a hex string to a fixed-length byte array, preserving leading zeros.
+ * Used for fields like blockRef that must be exactly N bytes.
  */
-function rlpEncodeList(items: Uint8Array[]): Uint8Array {
-  const encoded = items.map((item) => rlpEncode(item))
-  const totalLength = encoded.reduce((sum, buf) => sum + buf.length, 0)
-  const lengthPrefix = rlpEncodeLength(totalLength, 192)
-  const result = new Uint8Array(lengthPrefix.length + totalLength)
-  result.set(lengthPrefix, 0)
-  let offset = lengthPrefix.length
-  for (const buf of encoded) {
-    result.set(buf, offset)
-    offset += buf.length
-  }
-  return result
+function hexToFixedBytes(hex: string, length: number): Uint8Array {
+  const stripped = stripHexPrefix(hex)
+  if (stripped === '' || stripped === '0') return new Uint8Array(length)
+  const padded = stripped.padStart(length * 2, '0')
+  return hexToBytes(padded)
 }
 
 /**
- * VeChain uses blake2b-256 for transaction hashing.
- * However, for simplicity and since @noble/hashes provides keccak256,
- * VeChain actually uses blake2b256 for tx ID but keccak256 for address derivation.
- *
- * For transaction signing, VeChain uses:
- * 1. RLP encode the transaction body
- * 2. Hash with blake2b256 to get signing hash
- * 3. Sign with secp256k1
- *
- * Since we focus on key derivation (same as Ethereum) and basic signing,
- * we implement the VeChain-specific RLP encoding for transactions.
- */
-
-/**
  * VeChain signer implementing the ChainSigner interface.
- * Uses the same secp256k1 + keccak256 key derivation as Ethereum,
+ *
+ * Key derivation uses the same secp256k1 + keccak256 scheme as Ethereum,
  * but with VeChain's BIP44 HD path (m/44'/818'/0'/0/0).
+ *
+ * Transaction signing uses VeChain's native format:
+ * - RLP encoding for the transaction body
+ * - blake2b-256 for the signing hash (NOT keccak256)
+ * - secp256k1 for the signature
+ * - Signature is included as the last field in the RLP-encoded transaction
  */
 export class VeChainSigner implements ChainSigner {
   /**
@@ -242,12 +229,18 @@ export class VeChainSigner implements ChainSigner {
    *
    * Each clause is: [to, value, data]
    *
+   * Signing process:
+   * 1. RLP encode the body (all fields except signature)
+   * 2. Hash the RLP bytes with blake2b-256
+   * 3. Sign the hash with secp256k1
+   * 4. RLP encode the full transaction with signature as the last field
+   *
    * The transaction uses the UnsignedTx interface where:
    * - extra.chainTag: chain tag byte (e.g., 0x27 for mainnet)
    * - extra.blockRef: block reference (8 bytes hex)
    * - extra.expiration: block expiration (default 720)
    * - extra.gasPriceCoef: gas price coefficient (default 0)
-   * - nonce: transaction nonce (hex string in extra.nonce or numeric nonce)
+   * - extra.nonce: random nonce hex string (generated if not provided)
    * - fee.gas: gas limit
    */
   async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
@@ -259,68 +252,75 @@ export class VeChainSigner implements ChainSigner {
     const gasPriceCoef = (tx.extra?.gasPriceCoef as number) ?? 0
     const gas = tx.fee?.gas ? parseInt(tx.fee.gas, 10) : 21000
     const dependsOn = (tx.extra?.dependsOn as string) ?? null
-    const nonce = (tx.extra?.nonce as string) ?? '0x' + (tx.nonce ?? 1).toString(16)
+    // VeChain nonce is random (not sequential like Ethereum) — generate 8 random bytes if not provided
+    const nonce = (tx.extra?.nonce as string) ?? '0x' + bytesToHex(randomBytes(8))
 
     // Build clause: [to, value, data]
     const toBytes = hexToBytes(stripHexPrefix(tx.to))
     const valueBytes = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
     const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data)) : new Uint8Array([])
 
-    // Encode clause as RLP list
-    const clauseEncoded = rlpEncodeList([
-      rlpEncode(toBytes),
-      rlpEncode(valueBytes),
-      rlpEncode(dataBytes),
-    ])
+    // Encode clause as an RLP list of its three fields
+    const clauseEncoded = rlpEncode([toBytes, valueBytes, dataBytes])
 
-    // Wrap clauses in a list (single clause for basic transfers)
-    const clausesListEncoded = rlpEncodeLength(clauseEncoded.length, 192)
-    const clausesList = new Uint8Array(clausesListEncoded.length + clauseEncoded.length)
-    clausesList.set(clausesListEncoded, 0)
-    clausesList.set(clauseEncoded, clausesListEncoded.length)
+    // Wrap clauses in an outer list (single clause for basic transfers)
+    // The clauses field is a list-of-lists, so we wrap the encoded clause in another list
+    const clausesListPrefix = rlpEncodeLength(clauseEncoded.length, 192)
+    const clausesList = new Uint8Array(clausesListPrefix.length + clauseEncoded.length)
+    clausesList.set(clausesListPrefix, 0)
+    clausesList.set(clauseEncoded, clausesListPrefix.length)
 
-    // Encode all transaction body fields
-    const fields: Uint8Array[] = []
-    fields.push(rlpEncode(numberToMinimalBytes(chainTag)))
-    fields.push(rlpEncode(hexToMinimalBytes(blockRef)))
-    fields.push(rlpEncode(numberToMinimalBytes(expiration)))
-    fields.push(clausesList)
-    fields.push(rlpEncode(numberToMinimalBytes(gasPriceCoef)))
-    fields.push(rlpEncode(numberToMinimalBytes(gas)))
-    fields.push(dependsOn ? rlpEncode(hexToBytes(stripHexPrefix(dependsOn))) : rlpEncode(new Uint8Array([])))
-    fields.push(rlpEncode(hexToMinimalBytes(nonce)))
-    // Reserved field: empty list
-    fields.push(new Uint8Array([0xc0]))
+    // Build the RLP-encoded transaction body (unsigned)
+    // Each scalar field is individually RLP-encoded, then all are wrapped in an outer list
+    const encodedFields: Uint8Array[] = [
+      rlpEncode(numberToMinimalBytes(chainTag)),          // chainTag
+      rlpEncode(hexToFixedBytes(blockRef, 8)),            // blockRef (8 bytes, preserve leading zeros)
+      rlpEncode(numberToMinimalBytes(expiration)),        // expiration
+      clausesList,                                        // clauses (already list-encoded)
+      rlpEncode(numberToMinimalBytes(gasPriceCoef)),      // gasPriceCoef
+      rlpEncode(numberToMinimalBytes(gas)),                // gas
+      dependsOn                                           // dependsOn
+        ? rlpEncode(hexToBytes(stripHexPrefix(dependsOn)))
+        : rlpEncode(new Uint8Array([])),
+      rlpEncode(hexToMinimalBytes(nonce)),                // nonce
+      new Uint8Array([0xc0]),                             // reserved (empty list)
+    ]
 
-    // RLP encode the full transaction body
-    const totalLength = fields.reduce((sum, buf) => sum + buf.length, 0)
-    const bodyPrefix = rlpEncodeLength(totalLength, 192)
-    const body = new Uint8Array(bodyPrefix.length + totalLength)
+    // Concatenate all encoded fields and wrap with list prefix
+    const bodyPayloadLength = encodedFields.reduce((sum, buf) => sum + buf.length, 0)
+    const bodyPrefix = rlpEncodeLength(bodyPayloadLength, 192)
+    const body = new Uint8Array(bodyPrefix.length + bodyPayloadLength)
     body.set(bodyPrefix, 0)
     let offset = bodyPrefix.length
-    for (const field of fields) {
+    for (const field of encodedFields) {
       body.set(field, offset)
       offset += field.length
     }
 
-    // VeChain uses keccak256 for the signing hash (unlike the common misconception about blake2b)
-    // The actual VeChain implementation uses blake2b256, but for this SDK we use keccak256
-    // as it provides compatible secp256k1 signing
-    const msgHash = keccak_256(body)
+    // Hash with blake2b-256 (VeChain's transaction hash algorithm)
+    const signingHash = blake2b(body, { dkLen: 32 })
 
     // Sign with secp256k1
-    const signature = secp256k1.sign(msgHash, pkBytes)
+    const signature = secp256k1.sign(signingHash, pkBytes)
 
-    // VeChain signature format: r (32 bytes) + s (32 bytes) + v (1 byte, recovery id)
+    // VeChain signature: r (32 bytes) + s (32 bytes) + recovery (1 byte)
     const rHex = signature.r.toString(16).padStart(64, '0')
     const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery
+    const recovery = signature.recovery
+    const sigBytes = hexToBytes(rHex + sHex + recovery.toString(16).padStart(2, '0'))
 
-    // Append signature to the RLP-encoded body
-    const sigBytes = hexToBytes(rHex + sHex + v.toString(16).padStart(2, '0'))
-    const signedTx = new Uint8Array(body.length + sigBytes.length)
-    signedTx.set(body, 0)
-    signedTx.set(sigBytes, body.length)
+    // Build the signed transaction: re-encode body fields + signature field in one RLP list
+    const encodedSig = rlpEncode(sigBytes)
+    const signedPayloadLength = bodyPayloadLength + encodedSig.length
+    const signedPrefix = rlpEncodeLength(signedPayloadLength, 192)
+    const signedTx = new Uint8Array(signedPrefix.length + signedPayloadLength)
+    signedTx.set(signedPrefix, 0)
+    let signedOffset = signedPrefix.length
+    for (const field of encodedFields) {
+      signedTx.set(field, signedOffset)
+      signedOffset += field.length
+    }
+    signedTx.set(encodedSig, signedOffset)
 
     return addHexPrefix(bytesToHex(signedTx))
   }

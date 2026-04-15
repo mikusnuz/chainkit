@@ -1,4 +1,4 @@
-export { CosmosSigner } from './signer.js'
+export { CosmosSigner, encodeVarint, encodeField, encodeString, encodeBytes, encodeUint64Field, encodeMessage, encodeCoinRaw, encodeMsgSend, encodeAnyRaw, encodeTxBody, encodeAuthInfo, encodeSignDoc, encodeTxRaw, concat } from './signer.js'
 export { CosmosProvider } from './provider.js'
 export type { CosmosProviderConfig } from './provider.js'
 export type { CosmosTransactionData, CosmosFeeDetail } from './types.js'
