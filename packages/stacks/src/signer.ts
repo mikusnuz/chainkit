@@ -7,6 +7,10 @@ import {
   ErrorCode,
 } from '@chainkit/core'
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import {
+  getAddressFromPrivateKey,
+  makeSTXTokenTransfer,
+} from '@stacks/transactions'
 import { sha256 } from '@noble/hashes/sha256'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
@@ -255,6 +259,27 @@ function isValidStacksAddress(address: string): boolean {
   }
 }
 
+function stripHexPrefix(hex: string): string {
+  return hex.startsWith('0x') ? hex.slice(2) : hex
+}
+
+function getPrivateKeyBytes(privateKey: HexString): Uint8Array {
+  const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+
+  if (pkBytes.length !== 32) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PRIVATE_KEY,
+      `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+    )
+  }
+
+  return pkBytes
+}
+
+function getCompressedPrivateKeyHex(privateKey: HexString): string {
+  return `${stripHexPrefix(privateKey)}01`
+}
+
 /**
  * Stacks signer implementing the ChainSigner interface.
  * Uses secp256k1 with c32check address encoding.
@@ -295,44 +320,26 @@ export class StacksSigner implements ChainSigner {
    * Returns an SP... (mainnet) or ST... (testnet) address.
    */
   getAddress(privateKey: HexString): Address {
-    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pkBytes = hexToBytes(pkHex)
-
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    // Get compressed public key (33 bytes)
-    const publicKey = secp256k1.getPublicKey(pkBytes, true)
-
-    // SHA-256 then RIPEMD-160 (Hash160)
-    const shaHash = sha256(publicKey)
-    const hash160 = ripemd160(shaHash)
-
-    const version = this.network === 'mainnet'
-      ? VERSION_MAINNET_SINGLE_SIG
-      : VERSION_TESTNET_SINGLE_SIG
-
-    return hash160ToAddress(hash160, version)
+    getPrivateKeyBytes(privateKey)
+    return getAddressFromPrivateKey(
+      getCompressedPrivateKeyHex(privateKey),
+      this.network,
+    )
   }
 
   /**
    * Sign a Stacks transaction.
    *
-   * Stacks transactions use a custom serialization format. This method
-   * produces a secp256k1 signature over the transaction hash provided
-   * in tx.data or a hash of the serialized fields.
+   * If tx.data is provided, it is treated as a 32-byte transaction hash and
+   * this method returns the recoverable secp256k1 signature. Otherwise it
+   * builds and returns a fully serialized signed STX token transfer.
    */
   async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
-    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pkBytes = hexToBytes(pkHex)
+    const pkBytes = getPrivateKeyBytes(privateKey)
 
     // If tx.data contains a pre-serialized transaction hash, sign it directly
     if (tx.data) {
-      const txHash = hexToBytes(tx.data.startsWith('0x') ? tx.data.slice(2) : tx.data)
+      const txHash = hexToBytes(stripHexPrefix(tx.data))
       const signature = secp256k1.sign(txHash, pkBytes)
 
       // Stacks signature format: recovery byte (1) + r (32) + s (32) = 65 bytes
@@ -343,41 +350,32 @@ export class StacksSigner implements ChainSigner {
       return '0x' + recoveryByte + rHex + sHex
     }
 
-    // Build a minimal STX transfer payload and sign it
-    const network = (tx.extra?.network as string) ?? this.network
+    // Build and sign a standard STX token transfer using the canonical
+    // Stacks transaction serializer/signing protocol.
+    const network = (tx.extra?.network as 'mainnet' | 'testnet' | undefined) ?? this.network
     const nonce = tx.nonce ?? 0
     const fee = tx.fee?.fee ?? '0'
     const amount = tx.value ?? '0'
     const memo = (tx.extra?.memo as string) ?? ''
 
-    // Construct a deterministic message to sign:
-    // SHA-256 of: version + chainId + nonce + fee + amount + to + memo
-    const encoder = new TextEncoder()
-    const parts = [
-      network === 'mainnet' ? '00' : '80',
-      nonce.toString(16).padStart(16, '0'),
-      BigInt(fee).toString(16).padStart(16, '0'),
-      BigInt(amount).toString(16).padStart(16, '0'),
-      bytesToHex(encoder.encode(tx.to)),
-      bytesToHex(encoder.encode(memo)),
-    ]
-    const payload = hexToBytes(parts.join(''))
-    const msgHash = sha256(payload)
+    const signedTx = await makeSTXTokenTransfer({
+      recipient: tx.to,
+      amount: BigInt(amount),
+      fee: BigInt(fee),
+      nonce: BigInt(nonce),
+      memo,
+      network,
+      senderKey: getCompressedPrivateKeyHex(privateKey),
+    })
 
-    const signature = secp256k1.sign(msgHash, pkBytes)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const recoveryByte = signature.recovery.toString(16).padStart(2, '0')
-
-    return '0x' + recoveryByte + rHex + sHex
+    return '0x' + signedTx.serialize()
   }
 
   /**
    * Sign an arbitrary message with the Stacks prefix.
    */
   async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
-    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pkBytes = hexToBytes(pkHex)
+    const pkBytes = getPrivateKeyBytes(privateKey)
 
     const msgBytes =
       typeof message === 'string' ? new TextEncoder().encode(message) : message

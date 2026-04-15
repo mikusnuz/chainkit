@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@chainkit/core": "workspace:*",
+    "@stacks/transactions": "7.4.0",
     "@noble/secp256k1": "^2.2.0",
     "@noble/hashes": "^1.7.0",
     "@scure/base": "^1.2.0"

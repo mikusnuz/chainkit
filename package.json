@@ -9,13 +9,22 @@
     "clean": "turbo clean"
   },
   "devDependencies": {
+    "@mysten/sui": "2.15.0",
+    "@noble/ed25519": "2",
+    "@noble/hashes": "1",
+    "@noble/secp256k1": "2",
+    "@scure/base": "1",
+    "@stacks/transactions": "7.4.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.4.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
-    "tsup": "^8.4.0",
-    "@types/node": "^22.0.0"
+    "xrpl": "4.6.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

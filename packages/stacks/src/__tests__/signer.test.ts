@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  deserializeTransaction,
+  getAddressFromPrivateKey,
+  makeSTXTokenTransfer,
+} from '@stacks/transactions'
+import {
   StacksSigner,
   c32checkEncode,
   c32checkDecode,
@@ -96,6 +101,18 @@ describe('StacksSigner', () => {
       expect(mainnetAddr.startsWith('SP')).toBe(true)
       expect(testnetAddr.startsWith('ST')).toBe(true)
     })
+
+    it('should match official Stacks compressed-key address derivation', async () => {
+      const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
+      const privateKeyHex = privateKey.slice(2)
+
+      expect(signer.getAddress(privateKey)).toBe(
+        getAddressFromPrivateKey(`${privateKeyHex}01`, 'mainnet'),
+      )
+      expect(testnetSigner.getAddress(privateKey)).toBe(
+        getAddressFromPrivateKey(`${privateKeyHex}01`, 'testnet'),
+      )
+    })
   })
 
   describe('signMessage', () => {
@@ -158,7 +175,38 @@ describe('StacksSigner', () => {
         privateKey,
       )
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
-      expect(signature.length).toBe(132)
+      expect(signature.length).toBeGreaterThan(132)
+      expect(() => deserializeTransaction(signature.slice(2))).not.toThrow()
+    })
+
+    it('should match official signed STX token transfer serialization', async () => {
+      const privateKey = await testnetSigner.derivePrivateKey(testMnemonic, DEFAULT_PATH)
+      const address = testnetSigner.getAddress(privateKey)
+      const recipient = 'ST000000000000000000002AMW42H'
+
+      const signed = await testnetSigner.signTransaction(
+        {
+          from: address,
+          to: recipient,
+          value: '1',
+          nonce: 0,
+          fee: { fee: '200' },
+          extra: { memo: '', network: 'testnet' },
+        },
+        privateKey,
+      )
+
+      const expected = await makeSTXTokenTransfer({
+        recipient,
+        amount: 1n,
+        fee: 200n,
+        nonce: 0n,
+        memo: '',
+        network: 'testnet',
+        senderKey: `${privateKey.slice(2)}01`,
+      })
+
+      expect(signed.slice(2)).toBe(expected.serialize())
     })
   })
 })
