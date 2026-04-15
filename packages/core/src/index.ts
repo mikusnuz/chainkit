@@ -26,3 +26,13 @@ export { ChainKitError, ErrorCode } from './types/index.js'
 // RPC Manager
 export { RpcManager } from './rpc/index.js'
 export type { RpcManagerConfig, RpcStrategy, JsonRpcRequest, JsonRpcResponse } from './rpc/index.js'
+
+// Crypto Utilities
+export {
+  generateMnemonic,
+  validateMnemonic,
+  mnemonicToSeed,
+  mnemonicToSeedSync,
+  derivePath,
+  derivePublicKey,
+} from './crypto/index.js'

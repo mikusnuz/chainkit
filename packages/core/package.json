@@ -18,5 +18,10 @@
     "test": "vitest run",
     "clean": "rm -rf dist"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@scure/bip39": "^1.5.0",
+    "@scure/bip32": "^1.6.0",
+    "@noble/hashes": "^1.7.0"
+  }
 }
