@@ -282,6 +282,17 @@ describe('XrpProvider', () => {
       )
     })
 
+    it('should throw on error response without engine_result', async () => {
+      mockRpcResponse({
+        tx_json: { hash: 'ERRHASH' },
+        error: 'invalidTransaction',
+      })
+
+      await expect(provider.broadcastTransaction('0xBAD')).rejects.toThrow(
+        'Transaction submission failed',
+      )
+    })
+
     it('should strip 0x prefix from tx blob', async () => {
       mockRpcResponse({
         tx_json: { hash: 'HASH' },

@@ -8,7 +8,7 @@ import {
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
 import * as ed25519 from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha512'
-import { sha3_256 } from '@noble/hashes/sha3'
+import { blake2b } from '@noble/hashes/blake2b'
 import { hmac } from '@noble/hashes/hmac'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 
@@ -118,7 +118,7 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
 /**
  * Sui signer implementing the ChainSigner interface.
  * Uses ED25519 keys with SLIP-0010 derivation.
- * Sui addresses are derived as SHA3-256(0x00 || pubkey) with 0x prefix.
+ * Sui addresses are derived as BLAKE2b-256(0x00 || pubkey) with 0x prefix.
  */
 export class SuiSigner implements ChainSigner {
   /**
@@ -148,7 +148,7 @@ export class SuiSigner implements ChainSigner {
 
   /**
    * Get the Sui address for a given private key.
-   * Sui address = SHA3-256(0x00 flag byte || ED25519 public key)
+   * Sui address = BLAKE2b-256(0x00 flag byte || ED25519 public key)
    * Returns a '0x'-prefixed 64-character hex string.
    */
   getAddress(privateKey: HexString): Address {
@@ -164,13 +164,13 @@ export class SuiSigner implements ChainSigner {
     // Get ED25519 public key (32 bytes)
     const publicKey = ed25519.getPublicKey(pkBytes)
 
-    // Sui address: SHA3-256(0x00 || pubkey)
+    // Sui address: BLAKE2b-256(0x00 || pubkey)
     // 0x00 is the ED25519 scheme flag byte
     const payload = new Uint8Array(1 + 32)
     payload[0] = 0x00
     payload.set(publicKey, 1)
 
-    const hash = sha3_256(payload)
+    const hash = blake2b(payload, { dkLen: 32 })
     return addHexPrefix(bytesToHex(hash))
   }
 

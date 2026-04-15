@@ -16,6 +16,11 @@ function mockRpcResponse(result: unknown) {
   }
 }
 
+function lastRpcMethod(): string {
+  const body = mockFetch.mock.calls.at(-1)?.[1]?.body as string
+  return JSON.parse(body).method
+}
+
 describe('SuiProvider', () => {
   let provider: SuiProvider
   const testAddress = '0x' + 'a'.repeat(64)
@@ -44,6 +49,7 @@ describe('SuiProvider', () => {
       expect(balance.amount).toBe('1000000000')
       expect(balance.symbol).toBe('SUI')
       expect(balance.decimals).toBe(9)
+      expect(lastRpcMethod()).toBe('suix_getBalance')
     })
   })
 
@@ -173,6 +179,7 @@ describe('SuiProvider', () => {
       expect(Number(fee.slow)).toBeGreaterThan(0)
       expect(Number(fee.average)).toBeGreaterThan(Number(fee.slow))
       expect(Number(fee.fast)).toBeGreaterThan(Number(fee.average))
+      expect(lastRpcMethod()).toBe('suix_getReferenceGasPrice')
     })
   })
 
@@ -209,6 +216,7 @@ describe('SuiProvider', () => {
       expect(balance.amount).toBe('500000000')
       expect(balance.symbol).toBe('MYCOIN')
       expect(balance.decimals).toBe(9)
+      expect(lastRpcMethod()).toBe('suix_getBalance')
     })
   })
 
@@ -230,6 +238,7 @@ describe('SuiProvider', () => {
       expect(metadata.name).toBe('My Coin')
       expect(metadata.symbol).toBe('MYCOIN')
       expect(metadata.decimals).toBe(6)
+      expect(lastRpcMethod()).toBe('suix_getCoinMetadata')
     })
   })
 

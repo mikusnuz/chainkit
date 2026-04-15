@@ -41,7 +41,7 @@ export class SuiProvider
 
   /**
    * Get the SUI balance of an address.
-   * Uses sui_getBalance with coin type "0x2::sui::SUI".
+   * Uses suix_getBalance with coin type "0x2::sui::SUI".
    */
   async getBalance(address: Address): Promise<Balance> {
     const result = await this.rpc.request<{
@@ -49,7 +49,7 @@ export class SuiProvider
       coinObjectCount: number
       totalBalance: string
       lockedBalance: Record<string, string>
-    }>('sui_getBalance', [address, '0x2::sui::SUI'])
+    }>('suix_getBalance', [address, '0x2::sui::SUI'])
 
     return {
       address,
@@ -169,7 +169,7 @@ export class SuiProvider
   async estimateFee(): Promise<FeeEstimate> {
     // Get the reference gas price for the current epoch
     const referenceGasPrice = await this.rpc.request<string>(
-      'sui_getReferenceGasPrice',
+      'suix_getReferenceGasPrice',
       [],
     )
 
@@ -308,7 +308,7 @@ export class SuiProvider
       coinType: string
       coinObjectCount: number
       totalBalance: string
-    }>('sui_getBalance', [address, tokenAddress])
+    }>('suix_getBalance', [address, tokenAddress])
 
     // Extract symbol from coin type (last segment)
     const parts = tokenAddress.split('::')
@@ -328,7 +328,7 @@ export class SuiProvider
    */
   async getTokenMetadata(tokenAddress: Address): Promise<TokenMetadata> {
     const metadata = await this.rpc.request<Record<string, unknown>>(
-      'sui_getCoinMetadata',
+      'suix_getCoinMetadata',
       [tokenAddress],
     )
 
@@ -400,7 +400,7 @@ export class SuiProvider
         try {
           // Query transactions involving this address
           const result = await this.rpc.request<Record<string, unknown>>(
-            'sui_queryTransactionBlocks',
+            'suix_queryTransactionBlocks',
             [
               {
                 filter: { FromAddress: address },
@@ -436,7 +436,7 @@ export class SuiProvider
     // Initialize last digest
     try {
       const result = await this.rpc.request<Record<string, unknown>>(
-        'sui_queryTransactionBlocks',
+        'suix_queryTransactionBlocks',
         [
           { filter: { FromAddress: address } },
           null,

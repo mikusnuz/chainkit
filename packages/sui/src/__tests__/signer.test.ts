@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+import { hexToBytes } from '@noble/hashes/utils'
 import { SuiSigner } from '../signer.js'
 
 const TEST_MNEMONIC =
@@ -73,6 +75,16 @@ describe('SuiSigner', () => {
       const addr1 = signer.getAddress(privateKey)
       const addr2 = signer.getAddress(privateKey)
       expect(addr1).toBe(addr2)
+    })
+
+    it('should match the official Sui ED25519 address derivation', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SUI_PATH)
+      const keypair = Ed25519Keypair.fromSecretKey(hexToBytes(privateKey.slice(2)))
+
+      expect(signer.getAddress(privateKey)).toBe(keypair.getPublicKey().toSuiAddress())
+      expect(signer.getAddress(privateKey)).toBe(
+        '0x5e93a736d04fbb25737aa40bee40171ef79f65fae833749e3c089fe7cc2161f1',
+      )
     })
 
     it('should throw for invalid private key length', () => {

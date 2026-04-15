@@ -223,12 +223,21 @@ export class XrpProvider
       tx_json: {
         hash: string
       }
-      engine_result: string
-      engine_result_message: string
+      error?: string
+      engine_result?: string
+      engine_result_message?: string
     }>('submit', { tx_blob: txBlob })
 
+    if (result.error) {
+      throw new ChainKitError(
+        ErrorCode.TRANSACTION_FAILED,
+        `Transaction submission failed: ${result.error}`,
+      )
+    }
+
     if (
-      result.engine_result !== 'tesSUCCESS' &&
+      result.engine_result &&
+      !result.engine_result.startsWith('tes') &&
       result.engine_result !== 'terQUEUED' &&
       !result.engine_result.startsWith('tec')
     ) {

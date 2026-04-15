@@ -8,6 +8,7 @@ import {
 } from '@chainkit/core'
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
 import { sha256 } from '@noble/hashes/sha256'
+import { sha512 } from '@noble/hashes/sha512'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
@@ -141,10 +142,10 @@ function bigintToBytes(n: bigint): Uint8Array {
 const FIELD_IDS: Record<string, [number, number]> = {
   // [typeCode, fieldCode]
   TransactionType: [1, 2],
-  Flags: [1, 3],
-  Sequence: [1, 4],
-  DestinationTag: [1, 14],
-  LastLedgerSequence: [1, 27],
+  Flags: [2, 2],
+  Sequence: [2, 4],
+  DestinationTag: [2, 14],
+  LastLedgerSequence: [2, 27],
   Amount: [6, 1],
   Fee: [6, 8],
   SigningPubKey: [7, 3],
@@ -458,7 +459,7 @@ export class XrpSigner implements ChainSigner {
     // However, for secp256k1 signing, the message must be 32 bytes
     // XRP actually uses the half-SHA-512 of the signing prefix + serialized data
     const signingData = concatBytes(HASH_PREFIX_SIGN, serialized)
-    const hash = sha256(sha256(signingData))
+    const hash = sha512(signingData).slice(0, 32)
 
     // Sign with secp256k1
     const signature = secp256k1.sign(hash, pkBytes)

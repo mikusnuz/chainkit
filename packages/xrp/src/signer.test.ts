@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { decode, verifySignature } from 'xrpl'
 import { XrpSigner } from './signer.js'
 
 const signer = new XrpSigner()
@@ -156,6 +157,43 @@ describe('XrpSigner', () => {
       )
 
       expect(signed).toMatch(/^0x[0-9a-f]+$/)
+    })
+
+    it('should produce an XRPL-decodable and verifiable signed payment', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
+      const fromAddress = signer.getAddress(privateKey)
+      const destPk = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/144'/0'/0/1")
+      const destAddress = signer.getAddress(destPk)
+
+      const signed = await signer.signTransaction(
+        {
+          from: fromAddress,
+          to: destAddress,
+          value: '1000000',
+          fee: { fee: '12' },
+          nonce: 1,
+          extra: {
+            flags: 0,
+            destinationTag: 12345,
+            lastLedgerSequence: 80000000,
+          },
+        },
+        privateKey,
+      )
+
+      const blob = signed.slice(2).toUpperCase()
+      const decoded = decode(blob)
+
+      expect(decoded.TransactionType).toBe('Payment')
+      expect(decoded.Account).toBe(fromAddress)
+      expect(decoded.Destination).toBe(destAddress)
+      expect(decoded.Amount).toBe('1000000')
+      expect(decoded.Fee).toBe('12')
+      expect(decoded.Sequence).toBe(1)
+      expect(decoded.Flags).toBe(0)
+      expect(decoded.DestinationTag).toBe(12345)
+      expect(decoded.LastLedgerSequence).toBe(80000000)
+      expect(verifySignature(blob)).toBe(true)
     })
 
     it('should reject unsupported transaction types', async () => {
