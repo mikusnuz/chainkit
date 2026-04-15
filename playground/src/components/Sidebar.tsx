@@ -7,13 +7,12 @@ interface SidebarProps {
 }
 
 const GROUP_COLORS: Record<ChainGroup, string> = {
-  EVM: 'text-blue-400',
-  UTXO: 'text-orange-400',
-  Account: 'text-purple-400',
-  Other: 'text-gray-400',
+  Secp256k1: 'text-amber-400',
+  ED25519: 'text-cyan-400',
+  STARK: 'text-purple-400',
 }
 
-const GROUP_ORDER: ChainGroup[] = ['EVM', 'UTXO', 'Account', 'Other']
+const GROUP_ORDER: ChainGroup[] = ['Secp256k1', 'ED25519', 'STARK']
 
 const Sidebar = ({ selected, onSelect }: SidebarProps) => {
   return (
