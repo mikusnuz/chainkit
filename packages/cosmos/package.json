@@ -1,0 +1,36 @@
+{
+  "name": "@chainkit/cosmos",
+  "version": "0.1.0",
+  "description": "ChainKit Cosmos chain support",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@chainkit/core": "workspace:*",
+    "@noble/hashes": "^1.7.0",
+    "@noble/secp256k1": "^2.2.0",
+    "@scure/base": "^1.2.6"
+  },
+  "license": "MIT"
+}
