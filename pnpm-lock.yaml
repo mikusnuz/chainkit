@@ -54,6 +54,21 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/cardano:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/client:
     dependencies:
       '@chainkit/core':
@@ -129,6 +144,36 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/starknet:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/curves':
+        specifier: ^1.9.0
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/stellar:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/sui:
     dependencies:
       '@chainkit/core':
@@ -160,6 +205,21 @@ importers:
         version: 1.2.6
 
   packages/tron:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/xrp:
     dependencies:
       '@chainkit/core':
         specifier: workspace:*
