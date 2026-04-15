@@ -145,6 +145,46 @@ describe('EosSigner', () => {
       expect(sig1).toBe(sig2)
     })
 
+    it('should produce SIG_K1_ signatures with valid checksum (data + K1 order)', async () => {
+      const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+      const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
+
+      const signature = await signer.signTransaction(
+        {
+          from: 'testaccount1',
+          to: 'testaccount2',
+          value: '10000',
+          data: '00',
+          extra: {
+            chainId: 'aca376f206b8fc25a6ed44dbdc66547c36c6c33e3a119ffbeaef943642f0e906',
+            expiration: 1700000000,
+            refBlockNum: 100,
+            refBlockPrefix: 200,
+          },
+        },
+        privateKey,
+      )
+
+      // Decode the SIG_K1_ signature and verify the checksum uses
+      // the EOSIO fc convention: ripemd160(sigBytes + "K1")
+      const { base58 } = await import('@scure/base')
+      const { ripemd160 } = await import('@noble/hashes/ripemd160')
+
+      const payload = base58.decode(signature.slice(7))
+      expect(payload.length).toBe(69) // 65 sig + 4 checksum
+
+      const sigBytes = payload.slice(0, 65)
+      const checksum = payload.slice(65, 69)
+
+      // Verify checksum: ripemd160(sigBytes + "K1"), first 4 bytes
+      const checksumInput = new Uint8Array(65 + 2)
+      checksumInput.set(sigBytes, 0)
+      checksumInput[65] = 0x4b // 'K'
+      checksumInput[66] = 0x31 // '1'
+      const expectedChecksum = ripemd160(checksumInput).slice(0, 4)
+      expect(bytesToHex(checksum)).toBe(bytesToHex(expectedChecksum))
+    })
+
     it('should throw without chainId', async () => {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)

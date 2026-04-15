@@ -350,7 +350,7 @@ function serializeAndSignStxTransfer(params: StxTransferParams): string {
   // Total = 5 + 104 + 1 + 1 + 4 + 1 + 22 + 8 + 34 = 180
   const TX_SIZE = 180
 
-  function buildTx(signature: Uint8Array): Uint8Array {
+  function buildTx(signature: Uint8Array, txNonce: bigint, txFee: bigint): Uint8Array {
     const buf = new Uint8Array(TX_SIZE)
     let offset = 0
 
@@ -370,13 +370,13 @@ function serializeAndSignStxTransfer(params: StxTransferParams): string {
     buf.set(senderHash160, offset)
     offset += 20
     // nonce: u64 BE
-    writeU64BE(buf, offset, nonce)
+    writeU64BE(buf, offset, txNonce)
     offset += 8
     // fee: u64 BE
-    writeU64BE(buf, offset, fee)
+    writeU64BE(buf, offset, txFee)
     offset += 8
-    // key_encoding: 0x01 = compressed
-    buf[offset++] = 0x01
+    // key_encoding: 0x00 = compressed (Stacks PubKeyEncoding.Compressed = 0)
+    buf[offset++] = 0x00
     // signature: 65 bytes (recovery_id byte + r 32 bytes + s 32 bytes)
     buf.set(signature, offset)
     offset += 65
@@ -415,12 +415,14 @@ function serializeAndSignStxTransfer(params: StxTransferParams): string {
     return buf
   }
 
-  // Step 1: Serialize with empty signature (65 zero bytes)
+  // Step 1: Build the "initial sighash" transaction with cleared spending condition
+  // Per SIP-005, the initial sighash uses nonce=0, fee=0, and empty signature
+  // (the actual nonce/fee are included only in the presign sighash step)
   const emptySig = new Uint8Array(65)
-  const unsignedTx = buildTx(emptySig)
+  const initialTx = buildTx(emptySig, 0n, 0n)
 
-  // Step 2: Initial sighash = sha512/256(serialized_tx)
-  const initialSighash = sha512_256(unsignedTx)
+  // Step 2: Initial sighash = sha512/256(serialized_tx_with_cleared_condition)
+  const initialSighash = sha512_256(initialTx)
 
   // Step 3: Presign sighash
   //   presign_input = initialSighash(32) + auth_flag(1) + fee(8) + nonce(8) = 49 bytes
@@ -442,8 +444,8 @@ function serializeAndSignStxTransfer(params: StxTransferParams): string {
   sigBytes.set(hexToBytes(rHex), 1)
   sigBytes.set(hexToBytes(sHex), 33)
 
-  // Step 6: Build final transaction with real signature
-  const finalTx = buildTx(sigBytes)
+  // Step 6: Build final transaction with real signature and actual nonce/fee
+  const finalTx = buildTx(sigBytes, nonce, fee)
   return bytesToHex(finalTx)
 }
 

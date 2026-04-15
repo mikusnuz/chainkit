@@ -12,6 +12,15 @@ import {
   VERSION_TESTNET_SINGLE_SIG,
 } from '../signer.js'
 import { hexToBytes, bytesToHex } from '@noble/hashes/utils'
+import { sha256 } from '@noble/hashes/sha256'
+import { ripemd160 } from '@noble/hashes/ripemd160'
+import { hmac } from '@noble/hashes/hmac'
+import * as secp256k1 from '@noble/secp256k1'
+
+// @noble/secp256k1 v2 requires manually setting the hmac function
+secp256k1.etc.hmacSha256Sync = (k: Uint8Array, ...m: Uint8Array[]) => {
+  return hmac(sha256, k, secp256k1.etc.concatBytes(...m))
+}
 
 describe('StacksSigner', () => {
   const signer = new StacksSigner('mainnet')
@@ -216,6 +225,88 @@ describe('StacksSigner', () => {
       expect(signed1.slice(2, 4)).toBe('80')
       // Chain ID: 0x80000000
       expect(signed1.slice(4, 12)).toBe('80000000')
+    })
+
+    it('should use key_encoding 0x00 for compressed pubkey (PubKeyEncoding.Compressed)', async () => {
+      const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
+      const address = signer.getAddress(privateKey)
+      const signed = await signer.signTransaction(
+        {
+          from: address,
+          to: 'SP000000000000000000002Q6VF78',
+          value: '1',
+          nonce: 0,
+          fee: { fee: '200' },
+        },
+        privateKey,
+      )
+      // key_encoding byte is at offset 43 in the 180-byte tx
+      // hex offset = 2 (0x prefix) + 43*2 = 88
+      const keyEncoding = signed.slice(88, 90)
+      expect(keyEncoding).toBe('00') // 0x00 = Compressed in Stacks
+    })
+
+    it('should produce a signature whose recovered pubkey matches the signer hash160', async () => {
+      const privateKey = await testnetSigner.derivePrivateKey(testMnemonic, DEFAULT_PATH)
+      const address = testnetSigner.getAddress(privateKey)
+
+      const signed = await testnetSigner.signTransaction(
+        {
+          from: address,
+          to: 'ST000000000000000000002AMW42H',
+          value: '1',
+          nonce: 5,
+          fee: { fee: '500' },
+          extra: { network: 'testnet' },
+        },
+        privateKey,
+      )
+
+      const txHex = signed.slice(2) // strip 0x
+
+      // Extract the signer hash160 from the serialized tx (bytes 7-26)
+      const signerHash160 = txHex.slice(14, 54)
+
+      // Extract the signature (bytes 44-108)
+      const recovery = parseInt(txHex.slice(88, 90), 16)
+      const r = txHex.slice(90, 154)
+      const s = txHex.slice(154, 218)
+
+      // Build the initial sighash tx (nonce=0, fee=0, empty sig)
+      const unsignedBytes = hexToBytes(txHex)
+      // Zero out nonce (bytes 27-34), fee (bytes 35-42), and signature (bytes 44-108)
+      for (let i = 27; i < 43; i++) unsignedBytes[i] = 0 // nonce + fee
+      for (let i = 44; i < 109; i++) unsignedBytes[i] = 0 // signature
+
+      // Compute presign sighash
+      const { sha512_256 } = await import('@noble/hashes/sha512')
+      const initialSighash = sha512_256(unsignedBytes)
+
+      function writeU64BE(buf: Uint8Array, offset: number, value: bigint) {
+        const hi = Number((value >> 32n) & 0xffffffffn)
+        const lo = Number(value & 0xffffffffn)
+        buf[offset] = (hi >>> 24) & 0xff; buf[offset + 1] = (hi >>> 16) & 0xff
+        buf[offset + 2] = (hi >>> 8) & 0xff; buf[offset + 3] = hi & 0xff
+        buf[offset + 4] = (lo >>> 24) & 0xff; buf[offset + 5] = (lo >>> 16) & 0xff
+        buf[offset + 6] = (lo >>> 8) & 0xff; buf[offset + 7] = lo & 0xff
+      }
+
+      const presignInput = new Uint8Array(49)
+      presignInput.set(initialSighash, 0)
+      presignInput[32] = 0x04 // Standard auth
+      writeU64BE(presignInput, 33, 500n) // fee
+      writeU64BE(presignInput, 41, 5n) // nonce
+      const finalHash = sha512_256(presignInput)
+
+      // Recover the public key from the signature
+      const sig = new secp256k1.Signature(BigInt('0x' + r), BigInt('0x' + s), recovery)
+      const recoveredPubkey = sig.recoverPublicKey(finalHash).toRawBytes(true)
+
+      // Compute hash160 of recovered pubkey
+      const recoveredHash160 = bytesToHex(ripemd160(sha256(recoveredPubkey)))
+
+      // The recovered hash160 must match the signer in the tx
+      expect(recoveredHash160).toBe(signerHash160)
     })
 
     it('should encode memo in the serialized transaction', async () => {

@@ -93,11 +93,12 @@ function encodeEosSignature(compactSig: Uint8Array, recovery: number): string {
   sigBytes.set(compactSig.slice(0, 32), 1) // r
   sigBytes.set(compactSig.slice(32, 64), 33) // s
 
-  // Checksum: ripemd160("K1" + sigBytes), first 4 bytes
-  const checksumData = new Uint8Array(2 + 65)
-  checksumData[0] = 0x4b // 'K'
-  checksumData[1] = 0x31 // '1'
-  checksumData.set(sigBytes, 2)
+  // Checksum: ripemd160(sigBytes + "K1"), first 4 bytes
+  // EOSIO fc convention: data first, then type suffix
+  const checksumData = new Uint8Array(65 + 2)
+  checksumData.set(sigBytes, 0)
+  checksumData[65] = 0x4b // 'K'
+  checksumData[66] = 0x31 // '1'
   const checksum = ripemd160(checksumData).slice(0, 4)
 
   const payload = new Uint8Array(65 + 4)
