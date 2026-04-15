@@ -124,7 +124,7 @@ describe('StacksSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message and return a hex signature', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
-      const signature = await signer.signMessage('Hello Stacks', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Stacks' })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
       // r (32 bytes) + s (32 bytes) + v (1 byte) = 65 bytes = 130 hex chars + 0x
       expect(signature.length).toBe(132)
@@ -133,22 +133,22 @@ describe('StacksSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       const message = new TextEncoder().encode('Hello Stacks')
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
       expect(signature.length).toBe(132)
     })
 
     it('should produce deterministic signatures for the same message', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
-      const sig1 = await signer.signMessage('deterministic', privateKey)
-      const sig2 = await signer.signMessage('deterministic', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'deterministic' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'deterministic' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
-      const sig1 = await signer.signMessage('message1', privateKey)
-      const sig2 = await signer.signMessage('message2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message2' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -158,10 +158,7 @@ describe('StacksSigner', () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       // 32-byte hash as tx data
       const txHash = '0x' + '00'.repeat(32)
-      const signature = await signer.signTransaction(
-        { from: 'SP...', to: 'SP...', value: '1000000', data: txHash },
-        privateKey,
-      )
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: { from: 'SP...', to: 'SP...', value: '1000000', data: txHash } })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
       // recovery (1 byte) + r (32 bytes) + s (32 bytes) = 65 bytes = 130 hex chars + 0x
       expect(signature.length).toBe(132)
@@ -170,16 +167,13 @@ describe('StacksSigner', () => {
     it('should sign a STX transfer without pre-hashed data', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       const address = signer.getAddress(privateKey)
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'SP000000000000000000002Q6VF78',
           value: '1000000',
           nonce: 0,
           fee: { fee: '200' },
-        },
-        privateKey,
-      )
+        } })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
       // Serialized tx = 180 bytes = 360 hex chars + '0x' prefix = 362 chars
       expect(signature.length).toBe(362)
@@ -192,8 +186,9 @@ describe('StacksSigner', () => {
       const address = testnetSigner.getAddress(privateKey)
       const recipient = 'ST000000000000000000002AMW42H'
 
-      const signed1 = await testnetSigner.signTransaction(
-        {
+      const signed1 = await testnetSigner.signTransaction({
+        privateKey,
+        tx: {
           from: address,
           to: recipient,
           value: '1',
@@ -201,11 +196,11 @@ describe('StacksSigner', () => {
           fee: { fee: '200' },
           extra: { memo: '', network: 'testnet' },
         },
-        privateKey,
-      )
+      })
 
-      const signed2 = await testnetSigner.signTransaction(
-        {
+      const signed2 = await testnetSigner.signTransaction({
+        privateKey,
+        tx: {
           from: address,
           to: recipient,
           value: '1',
@@ -213,8 +208,7 @@ describe('StacksSigner', () => {
           fee: { fee: '200' },
           extra: { memo: '', network: 'testnet' },
         },
-        privateKey,
-      )
+      })
 
       // Same inputs must produce same output (deterministic signing)
       expect(signed1).toBe(signed2)
@@ -230,16 +224,13 @@ describe('StacksSigner', () => {
     it('should use key_encoding 0x00 for compressed pubkey (PubKeyEncoding.Compressed)', async () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       const address = signer.getAddress(privateKey)
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'SP000000000000000000002Q6VF78',
           value: '1',
           nonce: 0,
           fee: { fee: '200' },
-        },
-        privateKey,
-      )
+        } })
       // key_encoding byte is at offset 43 in the 180-byte tx
       // hex offset = 2 (0x prefix) + 43*2 = 88
       const keyEncoding = signed.slice(88, 90)
@@ -250,8 +241,9 @@ describe('StacksSigner', () => {
       const privateKey = await testnetSigner.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       const address = testnetSigner.getAddress(privateKey)
 
-      const signed = await testnetSigner.signTransaction(
-        {
+      const signed = await testnetSigner.signTransaction({
+        privateKey,
+        tx: {
           from: address,
           to: 'ST000000000000000000002AMW42H',
           value: '1',
@@ -259,8 +251,7 @@ describe('StacksSigner', () => {
           fee: { fee: '500' },
           extra: { network: 'testnet' },
         },
-        privateKey,
-      )
+      })
 
       const txHex = signed.slice(2) // strip 0x
 
@@ -313,29 +304,23 @@ describe('StacksSigner', () => {
       const privateKey = await signer.derivePrivateKey(testMnemonic, DEFAULT_PATH)
       const address = signer.getAddress(privateKey)
 
-      const withMemo = await signer.signTransaction(
-        {
+      const withMemo = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'SP000000000000000000002Q6VF78',
           value: '100',
           nonce: 0,
           fee: { fee: '200' },
           extra: { memo: 'hello' },
-        },
-        privateKey,
-      )
+        } })
 
-      const withoutMemo = await signer.signTransaction(
-        {
+      const withoutMemo = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'SP000000000000000000002Q6VF78',
           value: '100',
           nonce: 0,
           fee: { fee: '200' },
           extra: { memo: '' },
-        },
-        privateKey,
-      )
+        } })
 
       // Different memos should produce different serialized transactions
       expect(withMemo).not.toBe(withoutMemo)

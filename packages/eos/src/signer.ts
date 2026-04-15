@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { sha256 } from '@noble/hashes/sha256'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
@@ -367,7 +367,8 @@ export class EosSigner implements ChainSigner {
    * - extra.actionName: string (action name, default: "transfer")
    * - extra.permission: string (default: "active")
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
     const pkBytes = hexToBytes(pkHex)
 
@@ -400,7 +401,8 @@ export class EosSigner implements ChainSigner {
    * Computes SHA-256 of the message and signs with secp256k1.
    * Returns the signature in SIG_K1_ format.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
     const pkBytes = hexToBytes(pkHex)
 

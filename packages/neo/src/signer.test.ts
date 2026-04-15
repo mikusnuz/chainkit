@@ -143,7 +143,7 @@ describe('NeoSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
-      const signature = await signer.signMessage('Hello Neo!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Neo!' })
 
       // Should be 0x-prefixed hex
       expect(signature.startsWith('0x')).toBe(true)
@@ -154,7 +154,7 @@ describe('NeoSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const msgBytes = new TextEncoder().encode('Hello Neo!')
-      const signature = await signer.signMessage(msgBytes, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
 
       expect(signature.startsWith('0x')).toBe(true)
       expect(signature.length).toBe(130)
@@ -162,8 +162,8 @@ describe('NeoSigner', () => {
 
     it('should produce deterministic signatures for same message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
-      const sig1 = await signer.signMessage('test message', privateKey)
-      const sig2 = await signer.signMessage('test message', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'test message' })
       // P-256 sign with @noble/curves is deterministic (RFC 6979)
       expect(sig1).toBe(sig2)
     })
@@ -171,7 +171,7 @@ describe('NeoSigner', () => {
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const message = 'Verify this message'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Verify the signature
       const pkBytes = hexToBytes(privateKey.slice(2))
@@ -185,8 +185,8 @@ describe('NeoSigner', () => {
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
-      const sig1 = await signer.signMessage('message 1', privateKey)
-      const sig2 = await signer.signMessage('message 2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -196,8 +196,7 @@ describe('NeoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '1',
@@ -211,9 +210,7 @@ describe('NeoSigner', () => {
             validUntilBlock: 5000,
             networkMagic: 860833102,
           },
-        },
-        privateKey,
-      )
+        } })
 
       // Should be 0x-prefixed hex
       expect(signedTx.startsWith('0x')).toBe(true)
@@ -240,8 +237,8 @@ describe('NeoSigner', () => {
         },
       }
 
-      const signed1 = await signer.signTransaction({ ...baseTx, nonce: 1 }, privateKey)
-      const signed2 = await signer.signTransaction({ ...baseTx, nonce: 2 }, privateKey)
+      const signed1 = await signer.signTransaction({ privateKey: privateKey, tx: { ...baseTx, nonce: 1 } })
+      const signed2 = await signer.signTransaction({ privateKey: privateKey, tx: { ...baseTx, nonce: 2 } })
       expect(signed1).not.toBe(signed2)
     })
 
@@ -249,8 +246,7 @@ describe('NeoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const fromAddress = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '100000000', // 1 GAS (8 decimals)
@@ -264,9 +260,7 @@ describe('NeoSigner', () => {
             networkMagic: 860833102,
             asset: 'GAS',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx.startsWith('0x')).toBe(true)
 
@@ -297,8 +291,7 @@ describe('NeoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const fromAddress = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '10', // 10 NEO (indivisible)
@@ -312,9 +305,7 @@ describe('NeoSigner', () => {
             networkMagic: 860833102,
             asset: 'NEO',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx.startsWith('0x')).toBe(true)
       const txHex = signedTx.slice(2)
@@ -327,29 +318,23 @@ describe('NeoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const fromAddress = signer.getAddress(privateKey)
 
-      const signedTxDefault = await signer.signTransaction(
-        {
+      const signedTxDefault = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '1',
           nonce: 1,
           fee: { systemFee: '100000', networkFee: '50000' },
           extra: { validUntilBlock: 5000, networkMagic: 860833102 },
-        },
-        privateKey,
-      )
+        } })
 
-      const signedTxGas = await signer.signTransaction(
-        {
+      const signedTxGas = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '1',
           nonce: 1,
           fee: { systemFee: '100000', networkFee: '50000' },
           extra: { validUntilBlock: 5000, networkMagic: 860833102, asset: 'GAS' },
-        },
-        privateKey,
-      )
+        } })
 
       // Both should produce identical transactions
       expect(signedTxDefault).toBe(signedTxGas)
@@ -368,8 +353,8 @@ describe('NeoSigner', () => {
         extra: { validUntilBlock: 5000, networkMagic: 860833102, asset: 'GAS' },
       }
 
-      const signed1 = await signer.signTransaction(txParams, privateKey)
-      const signed2 = await signer.signTransaction(txParams, privateKey)
+      const signed1 = await signer.signTransaction({ privateKey: privateKey, tx: txParams })
+      const signed2 = await signer.signTransaction({ privateKey: privateKey, tx: txParams })
       expect(signed1).toBe(signed2)
     })
 
@@ -377,17 +362,14 @@ describe('NeoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEO_PATH)
       const fromAddress = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '1',
           nonce: 0,
           fee: { systemFee: '0', networkFee: '0' },
           extra: { validUntilBlock: 100, networkMagic: 860833102, asset: 'GAS' },
-        },
-        privateKey,
-      )
+        } })
 
       const txBytes = hexToBytes(signedTx.slice(2))
 
@@ -421,8 +403,7 @@ describe('NeoSigner', () => {
       const validUntilBlock = 5000
       const networkMagic = 860833102
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '100000000',
@@ -432,9 +413,7 @@ describe('NeoSigner', () => {
             networkFee: networkFee.toString(),
           },
           extra: { validUntilBlock, networkMagic, asset: 'GAS' },
-        },
-        privateKey,
-      )
+        } })
 
       const txBytes = hexToBytes(signedTx.slice(2))
 
@@ -500,15 +479,12 @@ describe('NeoSigner', () => {
       const fromAddress = signer.getAddress(privateKey)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: fromAddress,
             to: '',
             value: '',
             nonce: 1,
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction must have either data (raw script) or to + value')
     })
 
@@ -517,17 +493,14 @@ describe('NeoSigner', () => {
       const fromAddress = signer.getAddress(privateKey)
 
       // 1 billion GAS = 10^17 fractions
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '100000000000000000',
           nonce: 1,
           fee: { systemFee: '100000', networkFee: '50000' },
           extra: { validUntilBlock: 5000, networkMagic: 860833102, asset: 'GAS' },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx.startsWith('0x')).toBe(true)
       expect(signedTx.length).toBeGreaterThan(10)
@@ -540,17 +513,14 @@ describe('NeoSigner', () => {
       // Use a custom contract hash (big-endian display format)
       const customContract = '0xabcdef1234567890abcdef1234567890abcdef12'
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: 'NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs',
           value: '1000',
           nonce: 1,
           fee: { systemFee: '100000', networkFee: '50000' },
           extra: { validUntilBlock: 5000, networkMagic: 860833102, asset: customContract },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx.startsWith('0x')).toBe(true)
       // The reversed contract hash should appear in the transaction
@@ -576,7 +546,7 @@ describe('NeoSigner', () => {
       expect(address.length).toBe(34)
 
       // Sign message
-      const signature = await signer.signMessage('test', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'test' })
       expect(signature.startsWith('0x')).toBe(true)
       expect(signature.length).toBe(130)
 

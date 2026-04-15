@@ -135,14 +135,14 @@ describe('createClient', () => {
     // Should have estimated fee
     expect(mockProvider.estimateFee).toHaveBeenCalled()
     // Should have signed the transaction
-    expect(mockSigner.signTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(mockSigner.signTransaction).toHaveBeenCalledWith({
+      privateKey: '0xprivkey',
+      tx: expect.objectContaining({
         from: '0xmockaddress',
         to: '0xrecipient',
         value: '1000000000000000000',
       }),
-      '0xprivkey',
-    )
+    })
     // Should have broadcast the signed transaction
     expect(mockProvider.broadcastTransaction).toHaveBeenCalledWith('0xsignedtx')
   })
@@ -387,16 +387,16 @@ describe('createChainInstance', () => {
     expect(mockProvider.estimateFee).toHaveBeenCalled()
 
     // 3. Sign transaction
-    expect(mockSigner.signTransaction).toHaveBeenCalledWith(
-      {
+    expect(mockSigner.signTransaction).toHaveBeenCalledWith({
+      privateKey: '0xprivkey',
+      tx: {
         from: '0xmockaddress',
         to: '0xrecipient',
         value: '1000',
         data: '0xdeadbeef',
         fee: { average: '15.00' },
       },
-      '0xprivkey',
-    )
+    })
 
     // 4. Broadcast
     expect(mockProvider.broadcastTransaction).toHaveBeenCalledWith('0xsignedtx')

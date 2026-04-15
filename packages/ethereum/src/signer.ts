@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { hmac } from '@noble/hashes/hmac'
 import { sha256 } from '@noble/hashes/sha256'
@@ -203,7 +203,8 @@ export class EthereumSigner implements ChainSigner {
    * Supports EIP-1559 (type 2) transactions when chainId is provided in extra,
    * and legacy transactions as fallback.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
     const chainId = (tx.extra?.chainId as number) ?? 1
     const nonce = tx.nonce ?? 0
@@ -341,7 +342,8 @@ export class EthereumSigner implements ChainSigner {
    * Sign an arbitrary message using EIP-191 personal_sign.
    * Prepends the standard Ethereum message prefix.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Convert message to bytes

@@ -108,7 +108,7 @@ describe('ThetaSigner', () => {
   describe('signMessage', () => {
     it('should produce a valid 65-byte signature', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
-      const sig = await signer.signMessage('Hello, Theta!', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'Hello, Theta!' })
 
       // 0x + 130 hex chars = 65 bytes (r: 32 + s: 32 + v: 1)
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
@@ -116,36 +116,36 @@ describe('ThetaSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
-      const sig1 = await signer.signMessage('test message', pk)
-      const sig2 = await signer.signMessage('test message', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'test message' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
-      const sig1 = await signer.signMessage('message 1', pk)
-      const sig2 = await signer.signMessage('message 2', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should sign Uint8Array messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
       const msgBytes = new TextEncoder().encode('Hello')
-      const sig = await signer.signMessage(msgBytes, pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: msgBytes })
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
 
     it('should produce the same signature for string and equivalent bytes', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
       const msg = 'Hello, Theta!'
-      const sig1 = await signer.signMessage(msg, pk)
-      const sig2 = await signer.signMessage(new TextEncoder().encode(msg), pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: msg })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: new TextEncoder().encode(msg) })
       expect(sig1).toBe(sig2)
     })
 
     it('should have v value of 27 or 28', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
-      const sig = await signer.signMessage('test', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'test' })
       const vHex = sig.slice(-2)
       const v = parseInt(vHex, 16)
       expect(v === 27 || v === 28).toBe(true)
@@ -167,7 +167,7 @@ describe('ThetaSigner', () => {
         extra: { chainId: 361 }, // Theta mainnet
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       expect(signedTx.length).toBeGreaterThan(10)
     })
@@ -183,8 +183,8 @@ describe('ThetaSigner', () => {
         extra: { chainId: 361 },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -199,7 +199,7 @@ describe('ThetaSigner', () => {
         // no extra.chainId -> should default to 361
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
     })
   })

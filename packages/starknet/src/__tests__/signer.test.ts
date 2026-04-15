@@ -100,7 +100,7 @@ describe('StarknetSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and produce a 64-byte compact signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
-      const signature = await signer.signMessage('Hello, StarkNet!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, StarkNet!' })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -109,15 +109,15 @@ describe('StarknetSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
-      const sig1 = await signer.signMessage('Hello, StarkNet!', privateKey)
-      const sig2 = await signer.signMessage('Hello, StarkNet!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, StarkNet!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, StarkNet!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
       const message = 'Hello, StarkNet!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))
@@ -132,7 +132,7 @@ describe('StarknetSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       expect(sigBytes.length).toBe(64)
@@ -140,8 +140,8 @@ describe('StarknetSigner', () => {
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
-      const sig1 = await signer.signMessage('message1', privateKey)
-      const sig2 = await signer.signMessage('message2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message2' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -153,15 +153,12 @@ describe('StarknetSigner', () => {
       // Simulate a transaction hash (32 bytes)
       const fakeMsgHash = bytesToHex(new Uint8Array(32).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
           value: '1000000000000000000',
           data: `0x${fakeMsgHash}`,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -172,14 +169,11 @@ describe('StarknetSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STARKNET_PATH)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: signer.getAddress(privateKey),
             to: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
             value: '1000000000000000000',
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -188,15 +182,12 @@ describe('StarknetSigner', () => {
       const fakeHash = new Uint8Array(32).fill(0xcd)
       const fakeHashHex = bytesToHex(fakeHash)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
           value: '1000000000000000000',
           data: `0x${fakeHashHex}`,
-        },
-        privateKey,
-      )
+        } })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))

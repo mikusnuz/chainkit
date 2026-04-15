@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { sha256 } from '@noble/hashes/sha256'
 import { hmac } from '@noble/hashes/hmac'
@@ -163,7 +163,8 @@ export class TronSigner implements ChainSigner {
    *
    * The signing process: SHA-256 hash of raw tx data -> secp256k1 sign.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // If rawDataHex is provided (pre-built transaction from Tron node),
@@ -195,7 +196,8 @@ export class TronSigner implements ChainSigner {
    * Sign an arbitrary message using Tron message signing.
    * Prepends the Tron message prefix: "\x19TRON Signed Message:\n" + message length
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Convert message to bytes

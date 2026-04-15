@@ -101,7 +101,7 @@ describe('NearSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and produce a 64-byte signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEAR_PATH)
-      const signature = await signer.signMessage('Hello, NEAR!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, NEAR!' })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -110,15 +110,15 @@ describe('NearSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEAR_PATH)
-      const sig1 = await signer.signMessage('Hello, NEAR!', privateKey)
-      const sig2 = await signer.signMessage('Hello, NEAR!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, NEAR!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, NEAR!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEAR_PATH)
       const message = 'Hello, NEAR!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Verify the signature
       const sigBytes = hexToBytes(signature.slice(2))
@@ -133,7 +133,7 @@ describe('NearSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEAR_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       expect(sigBytes.length).toBe(64)
@@ -147,15 +147,12 @@ describe('NearSigner', () => {
       // Simulate a serialized transaction message (64 bytes of data)
       const fakeMessage = bytesToHex(new Uint8Array(64).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: 'receiver.near',
           value: '1000000000000000000000000',
           data: `0x${fakeMessage}`,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -166,14 +163,11 @@ describe('NearSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, NEAR_PATH)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: signer.getAddress(privateKey),
             to: 'receiver.near',
             value: '1000000000000000000000000',
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -182,15 +176,12 @@ describe('NearSigner', () => {
       const fakeMessage = new Uint8Array(64).fill(0xcd)
       const fakeMessageHex = bytesToHex(fakeMessage)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: 'receiver.near',
           value: '1000000000000000000000000',
           data: `0x${fakeMessageHex}`,
-        },
-        privateKey,
-      )
+        } })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))

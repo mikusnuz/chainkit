@@ -147,7 +147,7 @@ describe('AlgorandSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and produce a 64-byte signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ALGORAND_PATH)
-      const signature = await signer.signMessage('Hello, Algorand!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Algorand!' })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -156,15 +156,15 @@ describe('AlgorandSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ALGORAND_PATH)
-      const sig1 = await signer.signMessage('Hello, Algorand!', privateKey)
-      const sig2 = await signer.signMessage('Hello, Algorand!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Algorand!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Algorand!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ALGORAND_PATH)
       const message = 'Hello, Algorand!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Verify the signature
       const sigBytes = hexToBytes(signature.slice(2))
@@ -179,7 +179,7 @@ describe('AlgorandSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ALGORAND_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       expect(sigBytes.length).toBe(64)
@@ -194,15 +194,12 @@ describe('AlgorandSigner', () => {
       // Simulate a serialized transaction message (64 bytes of test data)
       const fakeMessage = bytesToHex(new Uint8Array(64).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
           value: '1000000',
           data: `0x${fakeMessage}`,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -214,14 +211,11 @@ describe('AlgorandSigner', () => {
       const address = signer.getAddress(privateKey)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: address,
             to: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
             value: '1000000',
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -231,15 +225,12 @@ describe('AlgorandSigner', () => {
       const fakeMessage = new Uint8Array(64).fill(0xcd)
       const fakeMessageHex = bytesToHex(fakeMessage)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
           value: '1000000',
           data: `0x${fakeMessageHex}`,
-        },
-        privateKey,
-      )
+        } })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))

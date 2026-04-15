@@ -168,7 +168,7 @@ describe('IotaSigner', () => {
         fee: { mode: 'raw' },
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/) // 64 bytes = 128 hex chars
     })
 
@@ -186,7 +186,7 @@ describe('IotaSigner', () => {
         fee: { mode: 'raw' },
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const sigBytes = hexToBytes(signature.slice(2))
 
       // IOTA signs the blake2b-256 hash of the essence
@@ -205,7 +205,7 @@ describe('IotaSigner', () => {
       }
 
       // Without fee.mode='raw' but with non-JSON hex, should still work (fallback)
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/) // 64 bytes = 128 hex chars
     })
 
@@ -217,7 +217,7 @@ describe('IotaSigner', () => {
         value: '1000000',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Transaction data',
       )
     })
@@ -264,7 +264,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(result).toMatch(/^0x[0-9a-f]+$/)
 
       // The result should be longer than just a 64-byte signature
@@ -284,7 +284,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // First 4 bytes: payload_type = 6 (u32 LE)
@@ -303,7 +303,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // offset 0: payload_type (4 bytes)
@@ -333,7 +333,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // After payload_type(4) + essence_type(1) + network_id(8) + inputs_count(2)
@@ -373,7 +373,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // Calculate output offset:
@@ -421,7 +421,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // Find the unlocks section
@@ -467,7 +467,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // Extract essence bytes (from offset 4 to before unlocks_count)
@@ -501,7 +501,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // Essence: essence_type(1) + network_id(8) + inputs_count(2) +
@@ -556,7 +556,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const payloadBytes = hexToBytes(result.slice(2))
 
       // After payload_type(4) + essence_type(1) + network_id(8) + inputs_count(2) +
@@ -584,7 +584,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'at least one input',
       )
     })
@@ -600,7 +600,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'at least one output',
       )
     })
@@ -620,7 +620,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Invalid transaction ID length',
       )
     })
@@ -646,7 +646,7 @@ describe('IotaSigner', () => {
         data: JSON.stringify(essence),
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Invalid address hash length',
       )
     })
@@ -821,14 +821,14 @@ describe('IotaSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, IOTA_HD_PATH)
-      const signature = await signer.signMessage('hello IOTA', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello IOTA' })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, IOTA_HD_PATH)
       const msg = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(msg, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msg })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
@@ -838,7 +838,7 @@ describe('IotaSigner', () => {
       const publicKey = ed25519.getPublicKey(pkBytes)
 
       const message = 'verify this message'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       const sigBytes = hexToBytes(signature.slice(2))
 
       const msgBytes = new TextEncoder().encode(message)
@@ -848,7 +848,7 @@ describe('IotaSigner', () => {
 
     it('should reject invalid private key length', async () => {
       await expect(
-        signer.signMessage('test', '0xabcdef'),
+        signer.signMessage({ privateKey: '0xabcdef', message: 'test' }),
       ).rejects.toThrow('Invalid private key length')
     })
   })

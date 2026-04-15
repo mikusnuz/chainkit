@@ -81,7 +81,7 @@ describe('AptosSigner', () => {
   describe('signMessage', () => {
     it('should produce a valid 64-byte ED25519 signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, APTOS_HD_PATH)
-      const signature = await signer.signMessage('hello aptos', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello aptos' })
 
       // ED25519 signature is 64 bytes = 128 hex chars
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -89,16 +89,16 @@ describe('AptosSigner', () => {
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, APTOS_HD_PATH)
-      const sig1 = await signer.signMessage('message one', privateKey)
-      const sig2 = await signer.signMessage('message two', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message one' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message two' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should accept Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, APTOS_HD_PATH)
       const msgBytes = new TextEncoder().encode('hello aptos')
-      const sig1 = await signer.signMessage('hello aptos', privateKey)
-      const sig2 = await signer.signMessage(msgBytes, privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'hello aptos' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
       expect(sig1).toBe(sig2)
     })
   })
@@ -113,7 +113,7 @@ describe('AptosSigner', () => {
         data: '0x' + 'deadbeef'.repeat(8),
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
@@ -125,7 +125,7 @@ describe('AptosSigner', () => {
         value: '100000000',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Transaction data',
       )
     })

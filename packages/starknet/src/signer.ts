@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { weierstrass } from '@noble/curves/abstract/weierstrass'
 import { Field } from '@noble/curves/abstract/modular'
 import { sha256 } from '@noble/hashes/sha256'
@@ -181,7 +181,8 @@ export class StarknetSigner implements ChainSigner {
    * The transaction data (tx.data) should contain the hex-encoded message hash
    * to be signed. The signature is returned as r (32 bytes) + s (32 bytes).
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (!tx.data) {
@@ -206,7 +207,8 @@ export class StarknetSigner implements ChainSigner {
    * The message is hashed with SHA-256 before signing (since the Stark curve
    * uses SHA-256 as its hash function).
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     const msgBytes =

@@ -126,7 +126,7 @@ describe('FlowSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
-      const signature = await signer.signMessage('Hello Flow', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Flow' })
 
       // Signature should be 0x + 128 hex chars (r: 32 bytes + s: 32 bytes)
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -135,26 +135,23 @@ describe('FlowSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
       const msg = new TextEncoder().encode('Hello Flow')
-      const signature = await signer.signMessage(msg, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msg })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should produce the same signature for string and equivalent bytes', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
-      const sig1 = await signer.signMessage('Hello Flow', privateKey)
-      const sig2 = await signer.signMessage(
-        new TextEncoder().encode('Hello Flow'),
-        privateKey,
-      )
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Flow' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: new TextEncoder().encode('Hello Flow') })
 
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
-      const sig1 = await signer.signMessage('Hello Flow', privateKey)
-      const sig2 = await signer.signMessage('Goodbye Flow', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Flow' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Goodbye Flow' })
 
       expect(sig1).not.toBe(sig2)
     })
@@ -167,15 +164,12 @@ describe('FlowSigner', () => {
       // Simulate a Flow transaction payload (hex-encoded)
       const payload = '0x' + Buffer.from('test-transaction-payload').toString('hex')
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: '0x1234567890abcdef',
           to: '0xfedcba0987654321',
           value: '0',
           data: payload,
-        },
-        privateKey,
-      )
+        } })
 
       // r + s = 64 bytes = 128 hex chars
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -185,10 +179,7 @@ describe('FlowSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
 
       await expect(
-        signer.signTransaction(
-          { from: '0x1234567890abcdef', to: '0xfedcba0987654321', value: '0' },
-          privateKey,
-        ),
+        signer.signTransaction({ privateKey: privateKey, tx: { from: '0x1234567890abcdef', to: '0xfedcba0987654321', value: '0' } }),
       ).rejects.toThrow('Transaction data')
     })
   })
@@ -199,7 +190,7 @@ describe('FlowSigner', () => {
       const publicKey = signer.getPublicKey(privateKey)
       const message = 'Hello Flow'
 
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       const isValid = signer.verifySignature(message, signature, publicKey)
 
       expect(isValid).toBe(true)
@@ -209,7 +200,7 @@ describe('FlowSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
       const publicKey = signer.getPublicKey(privateKey)
 
-      const signature = await signer.signMessage('Hello Flow', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Flow' })
       const isValid = signer.verifySignature('Wrong message', signature, publicKey)
 
       expect(isValid).toBe(false)
@@ -220,7 +211,7 @@ describe('FlowSigner', () => {
       const pk2 = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/539'/0'/0/1")
       const wrongPublicKey = signer.getPublicKey(pk2)
 
-      const signature = await signer.signMessage('Hello Flow', pk1)
+      const signature = await signer.signMessage({ privateKey: pk1, message: 'Hello Flow' })
       const isValid = signer.verifySignature('Hello Flow', signature, wrongPublicKey)
 
       expect(isValid).toBe(false)
@@ -231,7 +222,7 @@ describe('FlowSigner', () => {
       const publicKey = signer.getPublicKey(privateKey)
       const message = new Uint8Array([1, 2, 3, 4, 5])
 
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       const isValid = signer.verifySignature(message, signature, publicKey)
 
       expect(isValid).toBe(true)
@@ -260,7 +251,7 @@ describe('FlowSigner', () => {
       expect(publicKey).toMatch(/^0x[0-9a-f]{128}$/)
 
       const message = 'Flow blockchain test message'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
 
       const isValid = signer.verifySignature(message, signature, publicKey)

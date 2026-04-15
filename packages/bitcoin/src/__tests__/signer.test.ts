@@ -107,7 +107,7 @@ describe('BitcoinSigner', () => {
   describe('signMessage', () => {
     it('should produce a valid 65-byte compact signature', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
-      const sig = await signer.signMessage('Hello, Bitcoin!', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'Hello, Bitcoin!' })
 
       // 0x + 130 hex chars = 65 bytes (recovery: 1 + r: 32 + s: 32)
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
@@ -115,36 +115,36 @@ describe('BitcoinSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
-      const sig1 = await signer.signMessage('test message', pk)
-      const sig2 = await signer.signMessage('test message', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'test message' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
-      const sig1 = await signer.signMessage('message 1', pk)
-      const sig2 = await signer.signMessage('message 2', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should sign Uint8Array messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
       const msgBytes = new TextEncoder().encode('Hello')
-      const sig = await signer.signMessage(msgBytes, pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: msgBytes })
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
 
     it('should produce the same signature for string and equivalent bytes', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
       const msg = 'Hello, Bitcoin!'
-      const sig1 = await signer.signMessage(msg, pk)
-      const sig2 = await signer.signMessage(new TextEncoder().encode(msg), pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: msg })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: new TextEncoder().encode(msg) })
       expect(sig1).toBe(sig2)
     })
 
     it('should have a recovery flag byte in range 27-34', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
-      const sig = await signer.signMessage('test', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'test' })
       const recoveryByte = parseInt(sig.slice(2, 4), 16)
       expect(recoveryByte).toBeGreaterThanOrEqual(27)
       expect(recoveryByte).toBeLessThanOrEqual(34)
@@ -181,7 +181,7 @@ describe('BitcoinSigner', () => {
         },
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       expect(signedTx.length).toBeGreaterThan(10)
     })
@@ -211,8 +211,8 @@ describe('BitcoinSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -230,7 +230,7 @@ describe('BitcoinSigner', () => {
         },
       }
 
-      await expect(signer.signTransaction(tx, pk)).rejects.toThrow('at least one input')
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('at least one input')
     })
 
     it('should throw if no outputs are provided', async () => {
@@ -247,7 +247,7 @@ describe('BitcoinSigner', () => {
         },
       }
 
-      await expect(signer.signTransaction(tx, pk)).rejects.toThrow('at least one output')
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('at least one output')
     })
 
     it('should handle multiple inputs', async () => {
@@ -270,7 +270,7 @@ describe('BitcoinSigner', () => {
         },
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
 
       // SegWit transaction: version(4) + marker(1) + flag(1) + ... should be longer than simple

@@ -521,7 +521,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const signedExtrinsic = await signer.signTransaction(tx, pk)
+      const signedExtrinsic = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedExtrinsic.startsWith('0x')).toBe(true)
 
       // The signed extrinsic should be significantly longer than just a signature
@@ -549,8 +549,8 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -564,7 +564,7 @@ describe('PolkadotSigner', () => {
         value: '1000000000',
       }
 
-      await expect(signer.signTransaction(tx, pk)).rejects.toThrow('extra fields')
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('extra fields')
     })
 
     it('should reject missing genesisHash', async () => {
@@ -583,7 +583,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      await expect(signer.signTransaction(tx, pk)).rejects.toThrow('genesisHash and blockHash')
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('genesisHash and blockHash')
     })
 
     it('should support custom pallet and call indices', async () => {
@@ -606,7 +606,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const signedExtrinsic = await signer.signTransaction(tx, pk)
+      const signedExtrinsic = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedExtrinsic.startsWith('0x')).toBe(true)
       expect(signedExtrinsic.length).toBeGreaterThan(200)
     })
@@ -637,8 +637,8 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(txNoTip, pk)
-      const sig2 = await signer.signTransaction(txWithTip, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: txNoTip })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: txWithTip })
       // Different tip should produce different extrinsic
       expect(sig1).not.toBe(sig2)
     })
@@ -669,8 +669,8 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(txImmortal, pk)
-      const sig2 = await signer.signTransaction(txMortal, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: txImmortal })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: txMortal })
       expect(sig1).not.toBe(sig2)
     })
 
@@ -692,7 +692,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const signedExtrinsic = await signer.signTransaction(tx, pk)
+      const signedExtrinsic = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedExtrinsic.startsWith('0x')).toBe(true)
       expect(signedExtrinsic.length).toBeGreaterThan(200)
     })
@@ -718,7 +718,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const signedHex = await signer.signTransaction(tx, pk)
+      const signedHex = await signer.signTransaction({ privateKey: pk, tx: tx })
       const signedBytes = hexToBytes(signedHex.slice(2))
 
       // Parse the extrinsic to extract the signature and verify it
@@ -790,7 +790,7 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      await expect(signer.signTransaction(tx, '0x1234')).rejects.toThrow('Invalid private key length')
+      await expect(signer.signTransaction({ privateKey: '0x1234', tx: tx })).rejects.toThrow('Invalid private key length')
     })
 
     it('should produce different extrinsics for different nonces', async () => {
@@ -810,8 +810,8 @@ describe('PolkadotSigner', () => {
         },
       }
 
-      const sig0 = await signer.signTransaction({ ...baseTx, nonce: 0 }, pk)
-      const sig1 = await signer.signTransaction({ ...baseTx, nonce: 1 }, pk)
+      const sig0 = await signer.signTransaction({ privateKey: pk, tx: { ...baseTx, nonce: 0 } })
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: { ...baseTx, nonce: 1 } })
       expect(sig0).not.toBe(sig1)
     })
   })
@@ -821,7 +821,7 @@ describe('PolkadotSigner', () => {
       const signer = new PolkadotSigner()
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, POLKADOT_DEFAULT_PATH)
 
-      const signature = await signer.signMessage('Hello Polkadot', pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: 'Hello Polkadot' })
       expect(signature.startsWith('0x')).toBe(true)
       expect(signature.length).toBe(130) // 64 bytes = 128 hex + 0x
     })
@@ -831,7 +831,7 @@ describe('PolkadotSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, POLKADOT_DEFAULT_PATH)
 
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: message })
       expect(signature.startsWith('0x')).toBe(true)
       expect(signature.length).toBe(130)
     })
@@ -840,8 +840,8 @@ describe('PolkadotSigner', () => {
       const signer = new PolkadotSigner()
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, POLKADOT_DEFAULT_PATH)
 
-      const sig1 = await signer.signMessage('test message', pk)
-      const sig2 = await signer.signMessage('test message', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'test message' })
       expect(sig1).toBe(sig2)
     })
 
@@ -849,8 +849,8 @@ describe('PolkadotSigner', () => {
       const signer = new PolkadotSigner()
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, POLKADOT_DEFAULT_PATH)
 
-      const sig1 = await signer.signMessage('message 1', pk)
-      const sig2 = await signer.signMessage('message 2', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
   })

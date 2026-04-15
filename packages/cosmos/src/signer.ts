@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { sha256 } from '@noble/hashes/sha256'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
@@ -378,7 +378,8 @@ export class CosmosSigner implements ChainSigner {
    *
    * Returns a '0x'-prefixed hex string of the protobuf-encoded TxRaw.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {
@@ -450,7 +451,8 @@ export class CosmosSigner implements ChainSigner {
    * Sign an arbitrary message.
    * Uses the Cosmos ADR-036 style: SHA-256 hash of the message bytes.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Convert message to bytes

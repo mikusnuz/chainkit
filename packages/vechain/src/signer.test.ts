@@ -97,29 +97,29 @@ describe('VeChainSigner', () => {
   describe('signMessage', () => {
     it('should produce a valid signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
-      const signature = await signer.signMessage('hello vechain', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello vechain' })
       // r (64 chars) + s (64 chars) + v (2 chars) = 130 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
     })
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
-      const sig1 = await signer.signMessage('hello vechain', privateKey)
-      const sig2 = await signer.signMessage('hello vechain', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'hello vechain' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'hello vechain' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
-      const sig1 = await signer.signMessage('message one', privateKey)
-      const sig2 = await signer.signMessage('message two', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message one' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message two' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
       const msgBytes = new TextEncoder().encode('hello vechain')
-      const signature = await signer.signMessage(msgBytes, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
     })
   })
@@ -129,8 +129,7 @@ describe('VeChainSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
           value: '1000000000000000000', // 1 VET
@@ -144,9 +143,7 @@ describe('VeChainSigner', () => {
           fee: {
             gas: '21000',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       // Should be substantial length (RLP encoded body + 65 byte signature within RLP)
@@ -173,8 +170,8 @@ describe('VeChainSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, privateKey)
-      const sig2 = await signer.signTransaction(tx, privateKey)
+      const sig1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -198,8 +195,8 @@ describe('VeChainSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, privateKey)
-      const sig2 = await signer.signTransaction(tx, privateKey)
+      const sig1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       // Different random nonces should produce different transactions
       expect(sig1).not.toBe(sig2)
     })
@@ -208,8 +205,7 @@ describe('VeChainSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
           value: '0',
@@ -223,9 +219,7 @@ describe('VeChainSigner', () => {
           fee: {
             gas: '21000',
           },
-        },
-        privateKey,
-      )
+        } })
 
       // The signed tx should start with an RLP list prefix
       // RLP list prefix: if total length > 55, first byte is 0xf7 + len_of_len
@@ -240,8 +234,7 @@ describe('VeChainSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
           value: '0',
@@ -255,9 +248,7 @@ describe('VeChainSigner', () => {
           fee: {
             gas: '21000',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       expect(signedTx.length).toBeGreaterThan(100)
@@ -267,8 +258,7 @@ describe('VeChainSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, VECHAIN_HD_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
           value: '0',
@@ -283,9 +273,7 @@ describe('VeChainSigner', () => {
           fee: {
             gas: '50000',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       // Contract calls should be longer than simple transfers
@@ -297,8 +285,7 @@ describe('VeChainSigner', () => {
       const address = signer.getAddress(privateKey)
       const dependencyTxId = '0x' + 'ab'.repeat(32)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: '0x7567d83b7b8d80addcb281a71d54fc7b3364ffed',
           value: '1000000000000000000',
@@ -313,9 +300,7 @@ describe('VeChainSigner', () => {
           fee: {
             gas: '21000',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
       // With dependsOn, the tx should be longer

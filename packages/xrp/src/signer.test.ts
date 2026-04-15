@@ -82,16 +82,13 @@ describe('XrpSigner', () => {
       const destPk = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/144'/0'/0/1")
       const destAddress = signer.getAddress(destPk)
 
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: destAddress,
           value: '1000000', // 1 XRP in drops
           fee: { fee: '12' },
           nonce: 1,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signed).toMatch(/^0x[0-9a-f]+$/)
       // Should be a reasonable length for a signed XRP transaction
@@ -112,8 +109,8 @@ describe('XrpSigner', () => {
         nonce: 1,
       }
 
-      const sig1 = await signer.signTransaction(tx, privateKey)
-      const sig2 = await signer.signTransaction(tx, privateKey)
+      const sig1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -123,17 +120,14 @@ describe('XrpSigner', () => {
       const destPk = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/144'/0'/0/1")
       const destAddress = signer.getAddress(destPk)
 
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: destAddress,
           value: '1000000',
           fee: { fee: '12' },
           nonce: 1,
           extra: { destinationTag: 12345 },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signed).toMatch(/^0x[0-9a-f]+$/)
     })
@@ -144,17 +138,14 @@ describe('XrpSigner', () => {
       const destPk = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/144'/0'/0/1")
       const destAddress = signer.getAddress(destPk)
 
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: destAddress,
           value: '500000',
           fee: { fee: '15' },
           nonce: 42,
           extra: { lastLedgerSequence: 80000000 },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signed).toMatch(/^0x[0-9a-f]+$/)
     })
@@ -165,8 +156,7 @@ describe('XrpSigner', () => {
       const destPk = await signer.derivePrivateKey(TEST_MNEMONIC, "m/44'/144'/0'/0/1")
       const destAddress = signer.getAddress(destPk)
 
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: fromAddress,
           to: destAddress,
           value: '1000000',
@@ -177,9 +167,7 @@ describe('XrpSigner', () => {
             destinationTag: 12345,
             lastLedgerSequence: 80000000,
           },
-        },
-        privateKey,
-      )
+        } })
 
       const blob = signed.slice(2).toUpperCase()
       const decoded = decode(blob)
@@ -203,15 +191,12 @@ describe('XrpSigner', () => {
       const destAddress = signer.getAddress(destPk)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: fromAddress,
             to: destAddress,
             value: '1000000',
             extra: { transactionType: 'NonExistent' },
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Unsupported transaction type')
     })
   })
@@ -219,20 +204,20 @@ describe('XrpSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
-      const signature = await signer.signMessage('Hello XRP!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello XRP!' })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
     })
 
     it('should sign a byte message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
       const msgBytes = new TextEncoder().encode('Hello XRP!')
-      const signature = await signer.signMessage(msgBytes, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
       expect(signature).toMatch(/^0x[0-9a-f]+$/)
     })
 
     it('should produce DER-encoded signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
-      const signature = await signer.signMessage('Test', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Test' })
 
       // DER signatures start with 0x30 (SEQUENCE tag)
       const sigHex = signature.slice(2) // remove 0x
@@ -241,15 +226,15 @@ describe('XrpSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
-      const sig1 = await signer.signMessage('Same message', privateKey)
-      const sig2 = await signer.signMessage('Same message', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Same message' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Same message' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, XRP_HD_PATH)
-      const sig1 = await signer.signMessage('Message A', privateKey)
-      const sig2 = await signer.signMessage('Message B', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Message A' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Message B' })
       expect(sig1).not.toBe(sig2)
     })
   })

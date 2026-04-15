@@ -89,14 +89,14 @@ describe('MultiversXSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, MULTIVERSX_DEFAULT_PATH)
-      const signature = await signer.signMessage('hello multiversx', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello multiversx' })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/) // 64-byte ED25519 signature
     })
 
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, MULTIVERSX_DEFAULT_PATH)
       const message = new TextEncoder().encode('hello multiversx')
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
@@ -105,7 +105,7 @@ describe('MultiversXSigner', () => {
       const address = signer.getAddress(privateKey)
 
       const message = 'test message for verification'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Decode the public key from the address
       const pubkeyBytes = bech32ToPubkey(address)
@@ -118,8 +118,8 @@ describe('MultiversXSigner', () => {
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, MULTIVERSX_DEFAULT_PATH)
-      const sig1 = await signer.signMessage('message 1', privateKey)
-      const sig2 = await signer.signMessage('message 2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -132,15 +132,12 @@ describe('MultiversXSigner', () => {
       const txData = new TextEncoder().encode('{"nonce":0,"value":"1000000000000000000","receiver":"erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu","sender":"' + address + '","gasPrice":1000000000,"gasLimit":50000,"chainID":"1","version":1}')
       const dataHex = '0x' + bytesToHex(txData)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu',
           value: '1000000000000000000',
           data: dataHex,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
@@ -149,32 +146,26 @@ describe('MultiversXSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, MULTIVERSX_DEFAULT_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: 'erd1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6gq4hu',
           value: '1000000000000000000',
           nonce: 0,
           fee: { gasPrice: '1000000000', gasLimit: '50000' },
           extra: { chainID: '1', version: 1 },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should reject invalid private key', async () => {
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: '0xdeadbeef', tx: {
             from: 'erd1test',
             to: 'erd1test2',
             value: '0',
             data: '0xdeadbeef',
-          },
-          '0xdeadbeef',
-        ),
+          } }),
       ).rejects.toThrow('Invalid private key length')
     })
   })

@@ -89,8 +89,7 @@ describe('IconSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
       const from = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from,
           to: 'hx1000000000000000000000000000000000000000',
           value: '1000000000000000000', // 1 ICX in loop
@@ -98,9 +97,7 @@ describe('IconSigner', () => {
             nid: '0x1',
             timestamp: '0x5850adcbef6b8',
           },
-        },
-        privateKey,
-      )
+        } })
 
       // Result should be hex-encoded JSON
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
@@ -130,8 +127,7 @@ describe('IconSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
       const from = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from,
           to: 'hx1000000000000000000000000000000000000000',
           value: '0',
@@ -140,9 +136,7 @@ describe('IconSigner', () => {
             nid: '0x1',
             timestamp: '0x5850adcbef6b8',
           },
-        },
-        privateKey,
-      )
+        } })
 
       const hexStr = signedTx.slice(2)
       const bytes = new Uint8Array(hexStr.length / 2)
@@ -157,8 +151,7 @@ describe('IconSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
       const from = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from,
           to: 'hx1000000000000000000000000000000000000000',
           value: '0',
@@ -167,9 +160,7 @@ describe('IconSigner', () => {
             nid: '0x1',
             timestamp: '0x5850adcbef6b8',
           },
-        },
-        privateKey,
-      )
+        } })
 
       const hexStr = signedTx.slice(2)
       const bytes = new Uint8Array(hexStr.length / 2)
@@ -184,25 +175,19 @@ describe('IconSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
       const from = signer.getAddress(privateKey)
 
-      const tx1 = await signer.signTransaction(
-        {
+      const tx1 = await signer.signTransaction({ privateKey: privateKey, tx: {
           from,
           to: 'hx1000000000000000000000000000000000000000',
           value: '1000000000000000000',
           extra: { nid: '0x1', timestamp: '0x5850adcbef6b8' },
-        },
-        privateKey,
-      )
+        } })
 
-      const tx2 = await signer.signTransaction(
-        {
+      const tx2 = await signer.signTransaction({ privateKey: privateKey, tx: {
           from,
           to: 'hx2000000000000000000000000000000000000000',
           value: '2000000000000000000',
           extra: { nid: '0x1', timestamp: '0x5850adcbef6b9' },
-        },
-        privateKey,
-      )
+        } })
 
       expect(tx1).not.toBe(tx2)
     })
@@ -211,7 +196,7 @@ describe('IconSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
-      const signature = await signer.signMessage('Hello ICON', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello ICON' })
 
       // 65 bytes: r(32) + s(32) + v(1) = 130 hex + 2 for v + 2 for '0x'
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
@@ -220,22 +205,22 @@ describe('IconSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
       const msgBytes = new TextEncoder().encode('Hello ICON')
-      const signature = await signer.signMessage(msgBytes, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
 
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
     })
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
-      const sig1 = await signer.signMessage('Hello ICON', privateKey)
-      const sig2 = await signer.signMessage('Hello ICON', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello ICON' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello ICON' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICON_HD_PATH)
-      const sig1 = await signer.signMessage('Hello', privateKey)
-      const sig2 = await signer.signMessage('World', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'World' })
       expect(sig1).not.toBe(sig2)
     })
   })

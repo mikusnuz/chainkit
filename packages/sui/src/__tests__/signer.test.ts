@@ -95,7 +95,7 @@ describe('SuiSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message and return a 64-byte signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SUI_PATH)
-      const signature = await signer.signMessage('hello sui', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello sui' })
 
       // ED25519 signature is 64 bytes = 128 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -104,22 +104,22 @@ describe('SuiSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SUI_PATH)
       const msgBytes = new TextEncoder().encode('hello sui')
-      const signature = await signer.signMessage(msgBytes, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should produce the same signature for the same message and key', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SUI_PATH)
-      const sig1 = await signer.signMessage('test', privateKey)
-      const sig2 = await signer.signMessage('test', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'test' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'test' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SUI_PATH)
-      const sig1 = await signer.signMessage('message1', privateKey)
-      const sig2 = await signer.signMessage('message2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message2' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -136,7 +136,7 @@ describe('SuiSigner', () => {
         data: '0x' + '00'.repeat(32),
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
@@ -150,7 +150,7 @@ describe('SuiSigner', () => {
         value: '1000000000',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Transaction data',
       )
     })

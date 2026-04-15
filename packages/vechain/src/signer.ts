@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { blake2b } from '@noble/hashes/blake2b'
 import { hmac } from '@noble/hashes/hmac'
@@ -243,7 +243,8 @@ export class VeChainSigner implements ChainSigner {
    * - extra.nonce: random nonce hex string (generated if not provided)
    * - fee.gas: gas limit
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     const chainTag = (tx.extra?.chainTag as number) ?? 0x27
@@ -329,7 +330,8 @@ export class VeChainSigner implements ChainSigner {
    * Sign an arbitrary message.
    * VeChain uses a similar prefix to Ethereum for personal signing.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Convert message to bytes

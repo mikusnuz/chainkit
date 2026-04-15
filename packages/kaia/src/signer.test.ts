@@ -101,8 +101,7 @@ describe('KaiaSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
       const address = signer.getAddress(pk)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: {
           from: address,
           to: '0x0000000000000000000000000000000000000001',
           value: '1000000000000000000', // 1 KLAY in peb
@@ -112,9 +111,7 @@ describe('KaiaSigner', () => {
           },
           nonce: 0,
           extra: { chainId: 8217 },
-        },
-        pk,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x/)
       expect(signedTx.length).toBeGreaterThan(10)
@@ -124,8 +121,7 @@ describe('KaiaSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
       const address = signer.getAddress(pk)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: {
           from: address,
           to: '0x0000000000000000000000000000000000000001',
           value: '1000000000000000000',
@@ -136,9 +132,7 @@ describe('KaiaSigner', () => {
           },
           nonce: 0,
           extra: { chainId: 8217 },
-        },
-        pk,
-      )
+        } })
 
       // EIP-1559 transactions start with 0x02
       expect(signedTx).toMatch(/^0x02/)
@@ -150,8 +144,7 @@ describe('KaiaSigner', () => {
       const address = signer.getAddress(pk)
 
       // Sign without explicit chainId
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: {
           from: address,
           to: '0x0000000000000000000000000000000000000001',
           value: '0',
@@ -160,9 +153,7 @@ describe('KaiaSigner', () => {
             gasLimit: '0x5208',
           },
           nonce: 0,
-        },
-        pk,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x/)
     })
@@ -172,7 +163,7 @@ describe('KaiaSigner', () => {
     it('should sign a string message', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
 
-      const sig = await signer.signMessage('Hello, Kaia!', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'Hello, Kaia!' })
 
       // r (64 hex) + s (64 hex) + v (2 hex) = 130 hex chars + 0x prefix
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
@@ -182,7 +173,7 @@ describe('KaiaSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
       const msgBytes = new TextEncoder().encode('Hello, Kaia!')
 
-      const sig = await signer.signMessage(msgBytes, pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: msgBytes })
 
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
@@ -192,8 +183,8 @@ describe('KaiaSigner', () => {
       const msg = 'Hello, Kaia!'
       const msgBytes = new TextEncoder().encode(msg)
 
-      const sig1 = await signer.signMessage(msg, pk)
-      const sig2 = await signer.signMessage(msgBytes, pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: msg })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: msgBytes })
 
       expect(sig1).toBe(sig2)
     })
@@ -201,8 +192,8 @@ describe('KaiaSigner', () => {
     it('should produce deterministic signatures', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
 
-      const sig1 = await signer.signMessage('test', pk)
-      const sig2 = await signer.signMessage('test', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'test' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'test' })
 
       expect(sig1).toBe(sig2)
     })

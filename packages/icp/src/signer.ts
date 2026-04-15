@@ -5,7 +5,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import * as ed25519 from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha512'
 import { sha224 } from '@noble/hashes/sha256'
@@ -348,7 +348,8 @@ export class IcpSigner implements ChainSigner {
    * The transaction data is expected to be serialized in tx.data as a hex string.
    * Returns the ED25519 signature as a hex string.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {
@@ -375,7 +376,8 @@ export class IcpSigner implements ChainSigner {
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {

@@ -87,7 +87,7 @@ describe('TronSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and return a 65-byte hex signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TRON_HD_PATH)
-      const signature = await signer.signMessage('Hello Tron!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tron!' })
 
       // 65 bytes = 130 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
@@ -95,22 +95,22 @@ describe('TronSigner', () => {
 
     it('should produce deterministic signatures for the same message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TRON_HD_PATH)
-      const sig1 = await signer.signMessage('Hello Tron!', privateKey)
-      const sig2 = await signer.signMessage('Hello Tron!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tron!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tron!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TRON_HD_PATH)
-      const sig1 = await signer.signMessage('Hello Tron!', privateKey)
-      const sig2 = await signer.signMessage('Goodbye Tron!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tron!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Goodbye Tron!' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should handle Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TRON_HD_PATH)
       const msgBytes = new TextEncoder().encode('Hello Tron!')
-      const sig = await signer.signMessage(msgBytes, privateKey)
+      const sig = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
   })
@@ -131,7 +131,7 @@ describe('TronSigner', () => {
         },
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       // 65 bytes = r(32) + s(32) + v(1)
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/)
     })
@@ -145,7 +145,7 @@ describe('TronSigner', () => {
         value: '1000000',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Tron transactions require rawDataHex',
       )
     })
@@ -161,8 +161,8 @@ describe('TronSigner', () => {
         extra: { rawDataHex: fakeRawData },
       }
 
-      const sig1 = await signer.signTransaction(tx, privateKey)
-      const sig2 = await signer.signTransaction(tx, privateKey)
+      const sig1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(sig1).toBe(sig2)
     })
   })

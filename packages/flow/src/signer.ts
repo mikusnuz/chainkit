@@ -5,7 +5,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { p256 } from '@noble/curves/p256'
 import { sha256 } from '@noble/hashes/sha256'
 import { sha512 } from '@noble/hashes/sha512'
@@ -267,7 +267,8 @@ export class FlowSigner implements ChainSigner {
    * This is the RLP-encoded transaction payload that Flow requires.
    * Returns the ECDSA P-256 signature as a hex string (r || s, each 32 bytes).
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {
@@ -304,7 +305,8 @@ export class FlowSigner implements ChainSigner {
    * The message is SHA-256 hashed before signing.
    * Returns the signature as r (32 bytes) + s (32 bytes) hex string.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {

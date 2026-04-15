@@ -5,7 +5,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import * as ed25519 from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha512'
 import { hmac } from '@noble/hashes/hmac'
@@ -494,7 +494,8 @@ export class TezosSigner implements ChainSigner {
    *
    * Returns hex-encoded: forged_operation_bytes + ED25519_signature (64 bytes).
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {
@@ -564,7 +565,8 @@ export class TezosSigner implements ChainSigner {
    * The message is hashed with blake2b-256 before signing (Tezos convention).
    * Returns the 64-byte signature as a hex string.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     if (pkBytes.length !== 32) {

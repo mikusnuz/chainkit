@@ -83,8 +83,7 @@ describe('FilecoinSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, FILECOIN_PATH)
       const from = signer.getAddress(pk)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: pk, tx: {
           from,
           to: 'f1abjxfbp274xpdqcpuaykwkfb43omjotacm2p3za',
           value: '1000000000000000000', // 1 FIL in attoFIL
@@ -94,9 +93,7 @@ describe('FilecoinSigner', () => {
             gasFeeCap: '100000',
             gasPremium: '10000',
           },
-        },
-        pk,
-      )
+        } })
 
       // Signature should be 65 bytes (r=32 + s=32 + v=1) = 130 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/i)
@@ -118,8 +115,8 @@ describe('FilecoinSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(sig1).toBe(sig2)
     })
   })
@@ -128,7 +125,7 @@ describe('FilecoinSigner', () => {
     it('should sign a string message', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, FILECOIN_PATH)
 
-      const signature = await signer.signMessage('hello filecoin', pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: 'hello filecoin' })
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/i)
     })
 
@@ -136,7 +133,7 @@ describe('FilecoinSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, FILECOIN_PATH)
 
       const msg = new TextEncoder().encode('hello filecoin')
-      const signature = await signer.signMessage(msg, pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: msg })
       expect(signature).toMatch(/^0x[0-9a-f]{130}$/i)
     })
 
@@ -144,8 +141,8 @@ describe('FilecoinSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, FILECOIN_PATH)
       const message = 'test message'
 
-      const sig1 = await signer.signMessage(message, pk)
-      const sig2 = await signer.signMessage(new TextEncoder().encode(message), pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: message })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: new TextEncoder().encode(message) })
       expect(sig1).toBe(sig2)
     })
   })

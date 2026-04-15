@@ -5,7 +5,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { p256 } from '@noble/curves/p256'
 import { sha256 } from '@noble/hashes/sha256'
 import { sha512 } from '@noble/hashes/sha512'
@@ -563,7 +563,8 @@ export class NeoSigner implements ChainSigner {
    * The transaction is hashed with SHA-256 twice, then signed with P-256 ECDSA.
    * Returns the signed transaction with witness attached.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Extract Neo-specific fields from the transaction
@@ -645,7 +646,8 @@ export class NeoSigner implements ChainSigner {
    * Uses SHA-256 hash of the message before signing.
    * Returns the signature as r (32 bytes) + s (32 bytes) = 64 bytes hex.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     // Convert message to bytes

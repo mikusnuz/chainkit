@@ -99,7 +99,7 @@ describe('SolanaSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and produce a 64-byte signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SOLANA_PATH)
-      const signature = await signer.signMessage('Hello, Solana!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Solana!' })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -108,15 +108,15 @@ describe('SolanaSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SOLANA_PATH)
-      const sig1 = await signer.signMessage('Hello, Solana!', privateKey)
-      const sig2 = await signer.signMessage('Hello, Solana!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Solana!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Solana!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SOLANA_PATH)
       const message = 'Hello, Solana!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Verify the signature
       const sigBytes = hexToBytes(signature.slice(2))
@@ -131,7 +131,7 @@ describe('SolanaSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SOLANA_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       expect(sigBytes.length).toBe(64)
@@ -145,15 +145,12 @@ describe('SolanaSigner', () => {
       // Simulate a serialized transaction message (32 bytes of blockhash-like data)
       const fakeMessage = bytesToHex(new Uint8Array(64).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: '11111111111111111111111111111111',
           value: '1000000000',
           data: `0x${fakeMessage}`,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -164,14 +161,11 @@ describe('SolanaSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, SOLANA_PATH)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: signer.getAddress(privateKey),
             to: '11111111111111111111111111111111',
             value: '1000000000',
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -180,15 +174,12 @@ describe('SolanaSigner', () => {
       const fakeMessage = new Uint8Array(64).fill(0xcd)
       const fakeMessageHex = bytesToHex(fakeMessage)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: '11111111111111111111111111111111',
           value: '1000000000',
           data: `0x${fakeMessageHex}`,
-        },
-        privateKey,
-      )
+        } })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))

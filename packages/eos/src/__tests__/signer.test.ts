@@ -101,8 +101,7 @@ describe('EosSigner', () => {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: 'testaccount1',
           to: 'testaccount2',
           value: '10000', // 1.0000 EOS in smallest unit
@@ -116,9 +115,7 @@ describe('EosSigner', () => {
             actionName: 'transfer',
             permission: 'active',
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature).toMatch(/^SIG_K1_[1-9A-HJ-NP-Za-km-z]+$/)
     })
@@ -140,8 +137,8 @@ describe('EosSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, privateKey)
-      const sig2 = await signer.signTransaction(tx, privateKey)
+      const sig1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -149,8 +146,7 @@ describe('EosSigner', () => {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: 'testaccount1',
           to: 'testaccount2',
           value: '10000',
@@ -161,9 +157,7 @@ describe('EosSigner', () => {
             refBlockNum: 100,
             refBlockPrefix: 200,
           },
-        },
-        privateKey,
-      )
+        } })
 
       // Decode the SIG_K1_ signature and verify the checksum uses
       // the EOSIO fc convention: ripemd160(sigBytes + "K1")
@@ -190,10 +184,7 @@ describe('EosSigner', () => {
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
       await expect(
-        signer.signTransaction(
-          { from: 'test', to: 'test2', value: '1' },
-          privateKey,
-        ),
+        signer.signTransaction({ privateKey: privateKey, tx: { from: 'test', to: 'test2', value: '1' } }),
       ).rejects.toThrow('Chain ID is required')
     })
   })
@@ -203,7 +194,7 @@ describe('EosSigner', () => {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
-      const signature = await signer.signMessage('Hello EOS', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello EOS' })
       expect(signature).toMatch(/^SIG_K1_[1-9A-HJ-NP-Za-km-z]+$/)
     })
 
@@ -212,8 +203,8 @@ describe('EosSigner', () => {
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
       const msgBytes = new TextEncoder().encode('Hello EOS')
-      const sig1 = await signer.signMessage('Hello EOS', privateKey)
-      const sig2 = await signer.signMessage(msgBytes, privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello EOS' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: msgBytes })
       expect(sig1).toBe(sig2)
     })
 
@@ -221,8 +212,8 @@ describe('EosSigner', () => {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const privateKey = await signer.derivePrivateKey(mnemonic, EOS_HD_PATH)
 
-      const sig1 = await signer.signMessage('message1', privateKey)
-      const sig2 = await signer.signMessage('message2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message2' })
       expect(sig1).not.toBe(sig2)
     })
   })

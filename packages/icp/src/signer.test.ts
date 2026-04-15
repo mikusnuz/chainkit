@@ -127,7 +127,7 @@ describe('IcpSigner', () => {
         data: '0x' + bytesToHex(new TextEncoder().encode('test transaction')),
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
 
       // ED25519 signature: 64 bytes = 128 hex chars + '0x' prefix
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -146,7 +146,7 @@ describe('IcpSigner', () => {
         data: '0x' + bytesToHex(message),
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const sigBytes = hexToBytes(signature.slice(2))
 
       const isValid = ed25519.verify(sigBytes, message, publicKey)
@@ -161,14 +161,14 @@ describe('IcpSigner', () => {
         value: '0',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(/data.*required/i)
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(/data.*required/i)
     })
   })
 
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICP_PATH)
-      const signature = await signer.signMessage('hello ICP', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'hello ICP' })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
@@ -176,7 +176,7 @@ describe('IcpSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, ICP_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
@@ -187,7 +187,7 @@ describe('IcpSigner', () => {
       const publicKey = ed25519.getPublicKey(pkBytes)
 
       const message = 'verify me'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
       const sigBytes = hexToBytes(signature.slice(2))
       const msgBytes = new TextEncoder().encode(message)
 

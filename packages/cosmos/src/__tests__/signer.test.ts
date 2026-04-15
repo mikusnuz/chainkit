@@ -125,7 +125,7 @@ describe('CosmosSigner', () => {
   describe('signMessage', () => {
     it('should produce a valid 64-byte signature', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, COSMOS_HD_PATH)
-      const sig = await signer.signMessage('Hello, Cosmos!', pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: 'Hello, Cosmos!' })
 
       // 0x + 128 hex chars = 64 bytes (r: 32 + s: 32)
       expect(sig).toMatch(/^0x[0-9a-f]{128}$/)
@@ -133,30 +133,30 @@ describe('CosmosSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, COSMOS_HD_PATH)
-      const sig1 = await signer.signMessage('test message', pk)
-      const sig2 = await signer.signMessage('test message', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'test message' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, COSMOS_HD_PATH)
-      const sig1 = await signer.signMessage('message 1', pk)
-      const sig2 = await signer.signMessage('message 2', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'message 2' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should sign Uint8Array messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, COSMOS_HD_PATH)
       const msgBytes = new TextEncoder().encode('Hello')
-      const sig = await signer.signMessage(msgBytes, pk)
+      const sig = await signer.signMessage({ privateKey: pk, message: msgBytes })
       expect(sig).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should produce the same signature for string and equivalent bytes', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, COSMOS_HD_PATH)
       const msg = 'Hello, Cosmos!'
-      const sig1 = await signer.signMessage(msg, pk)
-      const sig2 = await signer.signMessage(new TextEncoder().encode(msg), pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: msg })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: new TextEncoder().encode(msg) })
       expect(sig1).toBe(sig2)
     })
   })
@@ -430,7 +430,7 @@ describe('CosmosSigner', () => {
         },
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
 
       // Should be 0x-prefixed hex
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
@@ -460,8 +460,8 @@ describe('CosmosSigner', () => {
         },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(sig1).toBe(sig2)
     })
 
@@ -474,14 +474,8 @@ describe('CosmosSigner', () => {
         fee: { amount: '2500', denom: 'uatom', gas: '200000' },
       }
 
-      const sig1 = await signer.signTransaction(
-        { ...baseTx, extra: { chainId: 'cosmoshub-4', accountNumber: 0, sequence: 0 } },
-        pk,
-      )
-      const sig2 = await signer.signTransaction(
-        { ...baseTx, extra: { chainId: 'theta-testnet-001', accountNumber: 0, sequence: 0 } },
-        pk,
-      )
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: { ...baseTx, extra: { chainId: 'cosmoshub-4', accountNumber: 0, sequence: 0 } } })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: { ...baseTx, extra: { chainId: 'theta-testnet-001', accountNumber: 0, sequence: 0 } } })
       expect(sig1).not.toBe(sig2)
     })
 
@@ -495,11 +489,8 @@ describe('CosmosSigner', () => {
         extra: { chainId: 'cosmoshub-4', accountNumber: 0, sequence: 0 },
       }
 
-      const sig1 = await signer.signTransaction(baseTx, pk)
-      const sig2 = await signer.signTransaction(
-        { ...baseTx, extra: { ...baseTx.extra, sequence: 1 } },
-        pk,
-      )
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: baseTx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: { ...baseTx, extra: { ...baseTx.extra, sequence: 1 } } })
       expect(sig1).not.toBe(sig2)
     })
 
@@ -517,8 +508,8 @@ describe('CosmosSigner', () => {
         extra: { ...txNoMemo.extra, memo: 'hello world' },
       }
 
-      const sig1 = await signer.signTransaction(txNoMemo, pk)
-      const sig2 = await signer.signTransaction(txWithMemo, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: txNoMemo })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: txWithMemo })
       expect(sig1).not.toBe(sig2)
     })
 
@@ -528,7 +519,7 @@ describe('CosmosSigner', () => {
         to: 'cosmos1xyz',
         value: '1000',
       }
-      await expect(signer.signTransaction(tx, '0x1234')).rejects.toThrow('Invalid private key length')
+      await expect(signer.signTransaction({ privateKey: '0x1234', tx: tx })).rejects.toThrow('Invalid private key length')
     })
 
     it('should default to uatom denom when fee denom not specified', async () => {
@@ -540,7 +531,7 @@ describe('CosmosSigner', () => {
         extra: { chainId: 'cosmoshub-4', accountNumber: 0, sequence: 0 },
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
     })
 
@@ -581,7 +572,7 @@ describe('CosmosSigner', () => {
       const signDocHash = sha256(signDocBytes)
 
       // Get the signed transaction
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       const txRawBytes = hexToBytes(signedTx.slice(2))
 
       // Parse the TxRaw to extract the signature (last field 3)
@@ -649,7 +640,7 @@ describe('CosmosSigner', () => {
         },
       }
 
-      const signedTx = await signer.signTransaction(tx, pk)
+      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
       expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
 
       // The output should be different from default MsgSend construction
@@ -665,7 +656,7 @@ describe('CosmosSigner', () => {
           sequence: 0,
         },
       }
-      const signedDefault = await signer.signTransaction(txDefault, pk)
+      const signedDefault = await signer.signTransaction({ privateKey: pk, tx: txDefault })
       expect(signedTx).not.toBe(signedDefault)
     })
   })

@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { sha256 } from '@noble/hashes/sha256'
 import { sha512_256 } from '@noble/hashes/sha512'
 import { ripemd160 } from '@noble/hashes/ripemd160'
@@ -508,7 +508,8 @@ export class StacksSigner implements ChainSigner {
    * this method returns the recoverable secp256k1 signature. Otherwise it
    * builds and returns a fully serialized signed STX token transfer.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = getPrivateKeyBytes(privateKey)
 
     // If tx.data contains a pre-serialized transaction hash, sign it directly
@@ -547,7 +548,8 @@ export class StacksSigner implements ChainSigner {
   /**
    * Sign an arbitrary message with the Stacks prefix.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = getPrivateKeyBytes(privateKey)
 
     const msgBytes =

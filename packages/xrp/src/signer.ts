@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { sha256 } from '@noble/hashes/sha256'
 import { sha512 } from '@noble/hashes/sha512'
 import { ripemd160 } from '@noble/hashes/ripemd160'
@@ -404,7 +404,8 @@ export class XrpSigner implements ChainSigner {
    *
    * Returns the signed transaction blob as a hex string.
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
     const publicKey = secp256k1.getPublicKey(pkBytes, true)
 
@@ -482,7 +483,8 @@ export class XrpSigner implements ChainSigner {
    * XRP does not have a standardized message signing format like Ethereum's EIP-191,
    * so we use a simple SHA-256 double hash of the message and sign with secp256k1.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     const msgBytes =

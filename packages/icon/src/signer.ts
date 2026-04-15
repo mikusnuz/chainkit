@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { hmac } from '@noble/hashes/hmac'
 import { sha256 } from '@noble/hashes/sha256'
@@ -147,7 +147,8 @@ export class IconSigner implements ChainSigner {
    *
    * Returns the signed transaction as a JSON string (hex-encoded).
    */
-  async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
+  async signTransaction(params: SignTransactionParams): Promise<HexString> {
+    const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
     const nid = (tx.extra?.nid as string) ?? DEFAULT_NID
     const version = '0x3'
@@ -223,7 +224,8 @@ export class IconSigner implements ChainSigner {
    * Sign an arbitrary message.
    * Hashes the message with keccak256 and signs with secp256k1.
    */
-  async signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString> {
+  async signMessage(params: SignMessageParams): Promise<HexString> {
+    const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     const msgBytes =

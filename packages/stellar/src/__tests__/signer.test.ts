@@ -143,7 +143,7 @@ describe('StellarSigner', () => {
   describe('signMessage', () => {
     it('should sign a message and produce a 64-byte signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STELLAR_PATH)
-      const signature = await signer.signMessage('Hello, Stellar!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Stellar!' })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -152,15 +152,15 @@ describe('StellarSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STELLAR_PATH)
-      const sig1 = await signer.signMessage('Hello, Stellar!', privateKey)
-      const sig2 = await signer.signMessage('Hello, Stellar!', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Stellar!' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Stellar!' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce verifiable signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STELLAR_PATH)
       const message = 'Hello, Stellar!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       // Verify the signature
       const sigBytes = hexToBytes(signature.slice(2))
@@ -175,7 +175,7 @@ describe('StellarSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STELLAR_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       const sigBytes = hexToBytes(signature.slice(2))
       expect(sigBytes.length).toBe(64)
@@ -189,15 +189,12 @@ describe('StellarSigner', () => {
       // Simulate a transaction hash (32 bytes)
       const fakeTxHash = bytesToHex(new Uint8Array(32).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOBD3CAZEAIORB2',
           value: '10000000',
           data: `0x${fakeTxHash}`,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature.startsWith('0x')).toBe(true)
       const sigBytes = hexToBytes(signature.slice(2))
@@ -208,14 +205,11 @@ describe('StellarSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, STELLAR_PATH)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: signer.getAddress(privateKey),
             to: 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOBD3CAZEAIORB2',
             value: '10000000',
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -224,15 +218,12 @@ describe('StellarSigner', () => {
       const fakeTxHash = new Uint8Array(32).fill(0xcd)
       const fakeTxHashHex = bytesToHex(fakeTxHash)
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: signer.getAddress(privateKey),
           to: 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOBD3CAZEAIORB2',
           value: '10000000',
           data: `0x${fakeTxHashHex}`,
-        },
-        privateKey,
-      )
+        } })
 
       const sigBytes = hexToBytes(signature.slice(2))
       const pkBytes = hexToBytes(privateKey.slice(2))

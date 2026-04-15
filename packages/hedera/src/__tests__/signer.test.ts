@@ -107,7 +107,7 @@ describe('HederaSigner', () => {
         data: '0x' + '00'.repeat(32),
       }
 
-      const signature = await signer.signTransaction(tx, privateKey)
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: tx })
 
       // ED25519 signature is 64 bytes = 128 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -121,7 +121,7 @@ describe('HederaSigner', () => {
         value: '100000000',
       }
 
-      await expect(signer.signTransaction(tx, privateKey)).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: privateKey, tx: tx })).rejects.toThrow(
         'Transaction data',
       )
     })
@@ -134,7 +134,7 @@ describe('HederaSigner', () => {
         data: '0x' + '00'.repeat(32),
       }
 
-      await expect(signer.signTransaction(tx, '0x1234')).rejects.toThrow(
+      await expect(signer.signTransaction({ privateKey: '0x1234', tx: tx })).rejects.toThrow(
         'Invalid private key length',
       )
     })
@@ -143,7 +143,7 @@ describe('HederaSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, HEDERA_DEFAULT_PATH)
-      const signature = await signer.signMessage('Hello, Hedera!', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello, Hedera!' })
 
       // ED25519 signature is 64 bytes = 128 hex chars + 0x prefix
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
@@ -152,27 +152,27 @@ describe('HederaSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, HEDERA_DEFAULT_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, HEDERA_DEFAULT_PATH)
-      const sig1 = await signer.signMessage('test message', privateKey)
-      const sig2 = await signer.signMessage('test message', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'test message' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'test message' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, HEDERA_DEFAULT_PATH)
-      const sig1 = await signer.signMessage('message1', privateKey)
-      const sig2 = await signer.signMessage('message2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message2' })
       expect(sig1).not.toBe(sig2)
     })
 
     it('should throw on invalid private key', async () => {
-      await expect(signer.signMessage('hello', '0x1234')).rejects.toThrow(
+      await expect(signer.signMessage({ privateKey: '0x1234', message: 'hello' })).rejects.toThrow(
         'Invalid private key length',
       )
     })

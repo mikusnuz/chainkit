@@ -112,7 +112,7 @@ describe('TezosSigner', () => {
         data: '0x' + mockForgedHex,
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
 
       // Result = forged bytes (32) + signature (64) = 96 bytes = 192 hex chars + 0x prefix
       expect(result).toMatch(/^0x[0-9a-f]+$/)
@@ -140,7 +140,7 @@ describe('TezosSigner', () => {
         },
       }
 
-      const result = await signer.signTransaction(tx, privateKey)
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: tx })
 
       // Should return forged + signature as hex
       expect(result).toMatch(/^0x[0-9a-f]+$/)
@@ -170,8 +170,8 @@ describe('TezosSigner', () => {
         },
       }
 
-      const result1 = await signer.signTransaction(tx, privateKey)
-      const result2 = await signer.signTransaction(tx, privateKey)
+      const result1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const result2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       expect(result1).toBe(result2)
     })
 
@@ -179,10 +179,7 @@ describe('TezosSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
 
       await expect(
-        signer.signTransaction(
-          { from: 'tz1...', to: 'tz1...', value: '0' },
-          privateKey,
-        ),
+        signer.signTransaction({ privateKey: privateKey, tx: { from: 'tz1...', to: 'tz1...', value: '0' } }),
       ).rejects.toThrow('extra.branch')
     })
   })
@@ -190,7 +187,7 @@ describe('TezosSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
-      const signature = await signer.signMessage('Hello Tezos', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tezos' })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
@@ -198,22 +195,22 @@ describe('TezosSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
       const message = new TextEncoder().encode('Hello Tezos')
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should produce deterministic signatures', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
-      const sig1 = await signer.signMessage('Hello Tezos', privateKey)
-      const sig2 = await signer.signMessage('Hello Tezos', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tezos' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'Hello Tezos' })
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, TEZOS_PATH)
-      const sig1 = await signer.signMessage('Hello', privateKey)
-      const sig2 = await signer.signMessage('World', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'Hello' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'World' })
       expect(sig1).not.toBe(sig2)
     })
   })
@@ -410,7 +407,7 @@ describe('Tezos binary encoding utilities', () => {
         },
       }
 
-      const signed = await signer.signTransaction(tx, privateKey)
+      const signed = await signer.signTransaction({ privateKey: privateKey, tx: tx })
       const rawHex = signed.slice(2) // remove 0x
       const rawBytes = new Uint8Array(rawHex.match(/.{2}/g)!.map(b => parseInt(b, 16)))
 
@@ -453,7 +450,7 @@ describe('Tezos binary encoding utilities', () => {
         data: ('0x' + forgedHex) as `0x${string}`,
       }
 
-      const legacyResult = await signer.signTransaction(legacyTx, privateKey)
+      const legacyResult = await signer.signTransaction({ privateKey: privateKey, tx: legacyTx })
 
       // And sign using structured mode
       const structuredTx = {
@@ -469,7 +466,7 @@ describe('Tezos binary encoding utilities', () => {
         },
       }
 
-      const structuredResult = await signer.signTransaction(structuredTx, privateKey)
+      const structuredResult = await signer.signTransaction({ privateKey: privateKey, tx: structuredTx })
 
       // Both should produce the same result
       expect(structuredResult).toBe(legacyResult)

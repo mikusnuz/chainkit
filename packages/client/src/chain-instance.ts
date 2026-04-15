@@ -43,21 +43,21 @@ function createFullInstance(
     async send(params: { to: string; amount: string; data?: unknown }): Promise<string> {
       const address = signer.getAddress(privateKey)
       const fee = await provider.estimateFee()
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({
+        privateKey,
+        tx: {
           from: address,
           to: params.to,
           value: params.amount,
           data: params.data as string | undefined,
           fee: { average: fee.average },
         },
-        privateKey,
-      )
+      })
       return provider.broadcastTransaction(signedTx)
     },
 
-    signTransaction: (tx, pk) => signer.signTransaction(tx, pk),
-    signMessage: (message, pk) => signer.signMessage(message, pk),
+    signTransaction: (txParams) => signer.signTransaction(txParams),
+    signMessage: (msgParams) => signer.signMessage(msgParams),
 
     getAddress(): string {
       return signer.getAddress(privateKey)

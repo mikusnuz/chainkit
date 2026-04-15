@@ -125,7 +125,7 @@ describe('TonSigner', () => {
   describe('signMessage', () => {
     it('should sign a string message', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const signature = await signer.signMessage('Hello TON', pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: 'Hello TON' })
 
       expect(signature.startsWith('0x')).toBe(true)
       // ED25519 signature = 64 bytes = 128 hex chars + '0x'
@@ -135,7 +135,7 @@ describe('TonSigner', () => {
     it('should sign a Uint8Array message', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
       const msg = new TextEncoder().encode('Hello TON')
-      const signature = await signer.signMessage(msg, pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: msg })
 
       expect(signature.startsWith('0x')).toBe(true)
       expect(signature.length).toBe(130)
@@ -143,16 +143,16 @@ describe('TonSigner', () => {
 
     it('should produce deterministic signatures', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const sig1 = await signer.signMessage('Hello TON', pk)
-      const sig2 = await signer.signMessage('Hello TON', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'Hello TON' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'Hello TON' })
 
       expect(sig1).toBe(sig2)
     })
 
     it('should produce different signatures for different messages', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const sig1 = await signer.signMessage('Hello TON', pk)
-      const sig2 = await signer.signMessage('Goodbye TON', pk)
+      const sig1 = await signer.signMessage({ privateKey: pk, message: 'Hello TON' })
+      const sig2 = await signer.signMessage({ privateKey: pk, message: 'Goodbye TON' })
 
       expect(sig1).not.toBe(sig2)
     })
@@ -161,14 +161,11 @@ describe('TonSigner', () => {
   describe('signTransaction', () => {
     it('should sign a transaction and return valid base64 BOC', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: pk, tx: {
           from: signer.getAddress(pk),
           to: '0:' + '1'.repeat(64),
           value: '1000000000', // 1 TON in nanoton
-        },
-        pk,
-      )
+        } })
 
       // Should be a base64 string (BOC)
       expect(typeof signed).toBe('string')
@@ -182,16 +179,13 @@ describe('TonSigner', () => {
 
     it('should produce valid BOC with parseable external message', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: pk, tx: {
           from: signer.getAddress(pk),
           to: '0:' + '2'.repeat(64),
           value: '500000000', // 0.5 TON
           nonce: 5, // seqno
           extra: { bounce: false },
-        },
-        pk,
-      )
+        } })
 
       // Parse as BOC
       const bocBuffer = Uint8Array.from(atob(signed), (c) => c.charCodeAt(0))
@@ -205,25 +199,19 @@ describe('TonSigner', () => {
 
     it('should include StateInit when seqno is 0', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
-      const withInit = await signer.signTransaction(
-        {
+      const withInit = await signer.signTransaction({ privateKey: pk, tx: {
           from: signer.getAddress(pk),
           to: '0:' + '1'.repeat(64),
           value: '1000000000',
           nonce: 0, // seqno 0 = first tx, include stateInit
-        },
-        pk,
-      )
+        } })
 
-      const withoutInit = await signer.signTransaction(
-        {
+      const withoutInit = await signer.signTransaction({ privateKey: pk, tx: {
           from: signer.getAddress(pk),
           to: '0:' + '1'.repeat(64),
           value: '1000000000',
           nonce: 1, // seqno > 0, no stateInit needed
-        },
-        pk,
-      )
+        } })
 
       // BOC with StateInit should be larger (contains code + data)
       const bufferWithInit = Uint8Array.from(atob(withInit), (c) => c.charCodeAt(0))
@@ -236,15 +224,12 @@ describe('TonSigner', () => {
       const userFriendly = signer.getUserFriendlyAddress(pk)
 
       // Should not throw when using user-friendly address as destination
-      const signed = await signer.signTransaction(
-        {
+      const signed = await signer.signTransaction({ privateKey: pk, tx: {
           from: signer.getAddress(pk),
           to: userFriendly,
           value: '100000000',
           nonce: 1,
-        },
-        pk,
-      )
+        } })
 
       expect(typeof signed).toBe('string')
       expect(signed.length).toBeGreaterThan(0)
@@ -262,8 +247,8 @@ describe('TonSigner', () => {
         extra: { validUntil: fixedValidUntil },
       }
 
-      const sig1 = await signer.signTransaction(tx, pk)
-      const sig2 = await signer.signTransaction(tx, pk)
+      const sig1 = await signer.signTransaction({ privateKey: pk, tx: tx })
+      const sig2 = await signer.signTransaction({ privateKey: pk, tx: tx })
 
       expect(sig1).toBe(sig2)
     })
@@ -274,7 +259,7 @@ describe('TonSigner', () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
       const pubKey = signer.getPublicKey(pk)
       const message = 'Hello TON'
-      const signature = await signer.signMessage(message, pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: message })
 
       const isValid = signer.verifySignature(message, signature, pubKey)
       expect(isValid).toBe(true)
@@ -283,7 +268,7 @@ describe('TonSigner', () => {
     it('should reject an invalid signature', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
       const pubKey = signer.getPublicKey(pk)
-      const signature = await signer.signMessage('Hello TON', pk)
+      const signature = await signer.signMessage({ privateKey: pk, message: 'Hello TON' })
 
       const isValid = signer.verifySignature('Wrong message', signature, pubKey)
       expect(isValid).toBe(false)

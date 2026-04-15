@@ -105,7 +105,7 @@ describe('CardanoSigner', () => {
     it('should produce a valid ED25519 signature', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
       const message = 'Hello, Cardano!'
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/) // 64 bytes = 128 hex chars
 
@@ -122,8 +122,8 @@ describe('CardanoSigner', () => {
     it('should produce different signatures for different messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
 
-      const sig1 = await signer.signMessage('message 1', privateKey)
-      const sig2 = await signer.signMessage('message 2', privateKey)
+      const sig1 = await signer.signMessage({ privateKey: privateKey, message: 'message 1' })
+      const sig2 = await signer.signMessage({ privateKey: privateKey, message: 'message 2' })
 
       expect(sig1).not.toBe(sig2)
     })
@@ -131,13 +131,13 @@ describe('CardanoSigner', () => {
     it('should sign Uint8Array messages', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
       const message = new Uint8Array([1, 2, 3, 4, 5])
-      const signature = await signer.signMessage(message, privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: message })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
     it('should throw for an invalid private key length', async () => {
-      await expect(signer.signMessage('test', '0xdead')).rejects.toThrow(
+      await expect(signer.signMessage({ privateKey: '0xdead', message: 'test' })).rejects.toThrow(
         'Invalid private key length',
       )
     })
@@ -150,15 +150,12 @@ describe('CardanoSigner', () => {
       // 32-byte hash (simulating a CBOR-serialized tx body hash)
       const txBodyHash = '0x' + bytesToHex(new Uint8Array(32).fill(0xab))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: 'addr1...',
           to: 'addr1...',
           value: '1000000',
           data: txBodyHash,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
 
@@ -176,10 +173,7 @@ describe('CardanoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
 
       await expect(
-        signer.signTransaction(
-          { from: 'addr1...', to: 'addr1...', value: '1000000' },
-          privateKey,
-        ),
+        signer.signTransaction({ privateKey: privateKey, tx: { from: 'addr1...', to: 'addr1...', value: '1000000' } }),
       ).rejects.toThrow('Transaction data')
     })
 
@@ -189,15 +183,12 @@ describe('CardanoSigner', () => {
       // Provide raw CBOR data (not a 32-byte hash)
       const rawCborData = '0x' + bytesToHex(new Uint8Array(100).fill(0xcd))
 
-      const signature = await signer.signTransaction(
-        {
+      const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: 'addr1...',
           to: 'addr1...',
           value: '1000000',
           data: rawCborData,
-        },
-        privateKey,
-      )
+        } })
 
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
@@ -381,8 +372,7 @@ describe('CardanoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
       const address = signer.getAddress(privateKey)
 
-      const result = await signer.signTransaction(
-        {
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: address,
           value: '2000000',
@@ -404,9 +394,7 @@ describe('CardanoSigner', () => {
               ttl: 50000000,
             },
           },
-        },
-        privateKey,
-      )
+        } })
 
       // Should return a hex-encoded CBOR transaction (not just a signature)
       expect(result).toMatch(/^0x/)
@@ -432,15 +420,12 @@ describe('CardanoSigner', () => {
         ttl: 55000000,
       }
 
-      const result = await signer.signTransaction(
-        {
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: address,
           value: '1500000',
           extra: { cardano: cardanoData },
-        },
-        privateKey,
-      )
+        } })
 
       // Re-encode the body and hash it independently
       const txBodyCbor = encodeTransactionBody(cardanoData)
@@ -475,8 +460,8 @@ describe('CardanoSigner', () => {
         },
       }
 
-      const result1 = await signer.signTransaction(tx, privateKey)
-      const result2 = await signer.signTransaction(tx, privateKey)
+      const result1 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
+      const result2 = await signer.signTransaction({ privateKey: privateKey, tx: tx })
 
       expect(result1).toBe(result2)
     })
@@ -486,8 +471,7 @@ describe('CardanoSigner', () => {
       const address = signer.getAddress(privateKey)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: address,
             to: address,
             value: '2000000',
@@ -499,9 +483,7 @@ describe('CardanoSigner', () => {
                 ttl: 50000000,
               },
             },
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('at least one input')
     })
 
@@ -510,8 +492,7 @@ describe('CardanoSigner', () => {
       const address = signer.getAddress(privateKey)
 
       await expect(
-        signer.signTransaction(
-          {
+        signer.signTransaction({ privateKey: privateKey, tx: {
             from: address,
             to: address,
             value: '2000000',
@@ -523,9 +504,7 @@ describe('CardanoSigner', () => {
                 ttl: 50000000,
               },
             },
-          },
-          privateKey,
-        ),
+          } }),
       ).rejects.toThrow('at least one output')
     })
 
@@ -533,8 +512,7 @@ describe('CardanoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
       const address = signer.getAddress(privateKey)
 
-      const result = await signer.signTransaction(
-        {
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: address,
           value: '5000000',
@@ -552,9 +530,7 @@ describe('CardanoSigner', () => {
               ttl: 50000000,
             },
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(result).toMatch(/^0x/)
       const txBytes = hexToBytes(result.slice(2))
@@ -565,8 +541,7 @@ describe('CardanoSigner', () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
       const address = signer.getAddress(privateKey)
 
-      const result = await signer.signTransaction(
-        {
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: address,
           value: '45000000000000', // 45 million ADA
@@ -578,9 +553,7 @@ describe('CardanoSigner', () => {
               ttl: 99999999,
             },
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(result).toMatch(/^0x/)
       const txBytes = hexToBytes(result.slice(2))
@@ -599,7 +572,7 @@ describe('CardanoSigner', () => {
       const address = signer.getAddress(privateKey)
       expect(address).toMatch(/^addr1/)
 
-      const signature = await signer.signMessage('test', privateKey)
+      const signature = await signer.signMessage({ privateKey: privateKey, message: 'test' })
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
@@ -608,8 +581,7 @@ describe('CardanoSigner', () => {
       const privateKey = await signer.derivePrivateKey(mnemonic, CARDANO_PATH)
       const address = signer.getAddress(privateKey)
 
-      const signedTx = await signer.signTransaction(
-        {
+      const signedTx = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: address,
           to: address,
           value: '1000000',
@@ -621,9 +593,7 @@ describe('CardanoSigner', () => {
               ttl: 100000000,
             },
           },
-        },
-        privateKey,
-      )
+        } })
 
       expect(signedTx).toMatch(/^0x/)
       const txBytes = hexToBytes(signedTx.slice(2))
