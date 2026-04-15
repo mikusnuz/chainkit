@@ -1,8 +1,37 @@
 import type { Address, UnsignedTx, HexString } from './common.js'
 
 /**
+ * Parameters for signing a transaction.
+ */
+export interface SignTransactionParams {
+  /** The private key to sign with */
+  privateKey: string
+  /** The unsigned transaction to sign */
+  tx: UnsignedTx
+  /** Signing options */
+  options?: {
+    /** Whether to return the full broadcast-ready tx or just the signature */
+    encoding?: 'broadcast' | 'signature-only'
+  }
+}
+
+/**
+ * Parameters for signing an arbitrary message.
+ */
+export interface SignMessageParams {
+  /** The message to sign (string or bytes) */
+  message: string | Uint8Array
+  /** The private key to sign with */
+  privateKey: string
+}
+
+/**
  * Interface for chain-specific signing operations.
  * Each chain adapter implements this to handle key derivation and transaction signing.
+ *
+ * Note: signTransaction uses a single params object. signMessage accepts either
+ * params object or direct arguments for backward compatibility. derivePrivateKey
+ * may return synchronously or asynchronously depending on the chain.
  */
 export interface ChainSigner {
   /**
@@ -22,31 +51,42 @@ export interface ChainSigner {
   /**
    * Derive a private key from a mnemonic using BIP44 path.
    * @param mnemonic - The mnemonic phrase
-   * @param path - BIP44 derivation path (e.g., "m/44'/60'/0'/0/0")
-   * @returns The derived private key as a hex string
+   * @param hdPath - BIP44 derivation path (e.g., "m/44'/60'/0'/0/0")
+   * @returns The derived private key as a string (sync or async)
    */
-  derivePrivateKey(mnemonic: string, path: string): Promise<HexString>
+  derivePrivateKey(mnemonic: string, hdPath: string): Promise<string> | string
 
   /**
    * Get the address for a given private key.
-   * @param privateKey - The private key as a hex string
+   * @param privateKey - The private key
    * @returns The derived address
    */
-  getAddress(privateKey: HexString): Address
+  getAddress(privateKey: string): string
 
   /**
-   * Sign a transaction.
-   * @param tx - The unsigned transaction to sign
-   * @param privateKey - The private key to sign with
-   * @returns The signed transaction as a hex string
+   * Sign a transaction using a params object.
+   * @param params - The signing parameters
+   * @returns The signed transaction as a string
    */
-  signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString>
+  signTransaction(params: SignTransactionParams): Promise<string>
 
   /**
    * Sign an arbitrary message.
-   * @param message - The message to sign (string or bytes)
-   * @param privateKey - The private key to sign with
-   * @returns The signature as a hex string
+   * @param params - The signing parameters
+   * @returns The signature as a string (sync or async)
    */
+  signMessage(params: SignMessageParams): Promise<string> | string
+}
+
+/**
+ * @deprecated Use ChainSigner instead. Kept for backward compatibility with existing chain adapters.
+ * The legacy interface uses positional arguments for signTransaction and signMessage.
+ */
+export interface LegacyChainSigner {
+  generateMnemonic(strength?: number): string
+  validateMnemonic(mnemonic: string): boolean
+  derivePrivateKey(mnemonic: string, path: string): Promise<HexString>
+  getAddress(privateKey: HexString): Address
+  signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString>
   signMessage(message: string | Uint8Array, privateKey: HexString): Promise<HexString>
 }

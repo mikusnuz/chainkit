@@ -126,19 +126,58 @@ export interface Utxo {
  */
 export interface UnsignedTx {
   /** Sender address */
-  from: Address
+  from?: Address
   /** Recipient address */
   to: Address
   /** Amount to transfer as a string */
-  value: string
-  /** Optional data payload */
-  data?: HexString
+  amount?: string
+  /** Alias for amount (for EVM compatibility) */
+  value?: string
+  /** Optional data payload (hex string or structured data) */
+  data?: HexString | unknown
+  /** Optional memo/message for the transaction */
+  memo?: string
   /** Optional fee/gas parameters (chain-specific) */
-  fee?: Record<string, string>
+  fee?: {
+    fee?: string
+    gasLimit?: string
+    gasPrice?: string
+    [key: string]: unknown
+  }
   /** Optional nonce */
   nonce?: number
   /** Chain-specific extra fields */
   extra?: Record<string, unknown>
+}
+
+/**
+ * @deprecated Use UnsignedTx instead. Kept for backward compatibility.
+ * The old UnsignedTx required `from` and `value` as mandatory fields.
+ */
+export interface LegacyUnsignedTx {
+  from: Address
+  to: Address
+  value: string
+  data?: HexString
+  fee?: Record<string, string>
+  nonce?: number
+  extra?: Record<string, unknown>
+}
+
+/**
+ * Parameters for sending a transaction.
+ */
+export interface SendParams {
+  /** Recipient address */
+  to: string
+  /** Amount to send as a string */
+  amount: string
+  /** Asset identifier (token address, denom, etc.) */
+  asset?: string
+  /** Optional memo/message */
+  memo?: string
+  /** Chain-specific options */
+  options?: Record<string, unknown>
 }
 
 /**

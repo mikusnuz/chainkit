@@ -14,10 +14,19 @@ import type {
   TokenMetadata,
   Utxo,
   UnsignedTx,
+  LegacyUnsignedTx,
+  SendParams,
   Unsubscribe,
   ChainSigner,
+  LegacyChainSigner,
+  SignTransactionParams,
+  SignMessageParams,
   ChainProvider,
   FeeEstimate,
+  EndpointStrategy,
+  EndpointConfig,
+  EndpointInput,
+  ProviderConfig,
   ContractCapable,
   TokenCapable,
   SubscriptionCapable,
@@ -95,14 +104,108 @@ describe('Common types', () => {
     expectTypeOf<Utxo['confirmed']>().toBeBoolean()
   })
 
-  it('UnsignedTx should have correct shape', () => {
-    expectTypeOf<UnsignedTx>().toHaveProperty('from')
+  it('UnsignedTx should have correct shape with optional from', () => {
     expectTypeOf<UnsignedTx>().toHaveProperty('to')
-    expectTypeOf<UnsignedTx>().toHaveProperty('value')
+    expectTypeOf<UnsignedTx>().toHaveProperty('extra')
+
+    // from is now optional
+    const tx: UnsignedTx = { to: '0x123' }
+    expectTypeOf(tx).toMatchTypeOf<UnsignedTx>()
+
+    // amount and value are both optional
+    const txWithAmount: UnsignedTx = { to: '0x123', amount: '1000' }
+    expectTypeOf(txWithAmount).toMatchTypeOf<UnsignedTx>()
+
+    const txWithValue: UnsignedTx = { to: '0x123', value: '1000' }
+    expectTypeOf(txWithValue).toMatchTypeOf<UnsignedTx>()
+
+    // memo is supported
+    const txWithMemo: UnsignedTx = { to: '0x123', memo: 'test' }
+    expectTypeOf(txWithMemo).toMatchTypeOf<UnsignedTx>()
+
+    // fee supports gasLimit and gasPrice
+    const txWithFee: UnsignedTx = {
+      to: '0x123',
+      fee: { gasLimit: '21000', gasPrice: '20000000000' },
+    }
+    expectTypeOf(txWithFee).toMatchTypeOf<UnsignedTx>()
+  })
+
+  it('LegacyUnsignedTx should require from and value', () => {
+    expectTypeOf<LegacyUnsignedTx>().toHaveProperty('from')
+    expectTypeOf<LegacyUnsignedTx>().toHaveProperty('to')
+    expectTypeOf<LegacyUnsignedTx>().toHaveProperty('value')
+
+    expectTypeOf<LegacyUnsignedTx['from']>().toBeString()
+    expectTypeOf<LegacyUnsignedTx['to']>().toBeString()
+    expectTypeOf<LegacyUnsignedTx['value']>().toBeString()
+  })
+
+  it('SendParams should have correct shape', () => {
+    expectTypeOf<SendParams>().toHaveProperty('to')
+    expectTypeOf<SendParams>().toHaveProperty('amount')
+
+    expectTypeOf<SendParams['to']>().toBeString()
+    expectTypeOf<SendParams['amount']>().toBeString()
+
+    // optional fields
+    const params: SendParams = { to: '0x123', amount: '1000' }
+    expectTypeOf(params).toMatchTypeOf<SendParams>()
+
+    const paramsWithAsset: SendParams = { to: '0x123', amount: '1000', asset: 'USDT', memo: 'payment' }
+    expectTypeOf(paramsWithAsset).toMatchTypeOf<SendParams>()
   })
 
   it('Unsubscribe should be a function returning void', () => {
     expectTypeOf<Unsubscribe>().toEqualTypeOf<() => void>()
+  })
+})
+
+describe('SignTransactionParams', () => {
+  it('should have correct shape', () => {
+    expectTypeOf<SignTransactionParams>().toHaveProperty('privateKey')
+    expectTypeOf<SignTransactionParams>().toHaveProperty('tx')
+
+    expectTypeOf<SignTransactionParams['privateKey']>().toBeString()
+
+    const params: SignTransactionParams = {
+      privateKey: '0xabc',
+      tx: { to: '0x123', value: '1000' },
+    }
+    expectTypeOf(params).toMatchTypeOf<SignTransactionParams>()
+  })
+
+  it('should support encoding option', () => {
+    const params: SignTransactionParams = {
+      privateKey: '0xabc',
+      tx: { to: '0x123' },
+      options: { encoding: 'broadcast' },
+    }
+    expectTypeOf(params).toMatchTypeOf<SignTransactionParams>()
+
+    const sigOnly: SignTransactionParams = {
+      privateKey: '0xabc',
+      tx: { to: '0x123' },
+      options: { encoding: 'signature-only' },
+    }
+    expectTypeOf(sigOnly).toMatchTypeOf<SignTransactionParams>()
+  })
+})
+
+describe('SignMessageParams', () => {
+  it('should have correct shape', () => {
+    expectTypeOf<SignMessageParams>().toHaveProperty('message')
+    expectTypeOf<SignMessageParams>().toHaveProperty('privateKey')
+
+    expectTypeOf<SignMessageParams['privateKey']>().toBeString()
+  })
+
+  it('should accept string or Uint8Array message', () => {
+    const strParams: SignMessageParams = { message: 'hello', privateKey: '0xabc' }
+    expectTypeOf(strParams).toMatchTypeOf<SignMessageParams>()
+
+    const bytesParams: SignMessageParams = { message: new Uint8Array([1, 2, 3]), privateKey: '0xabc' }
+    expectTypeOf(bytesParams).toMatchTypeOf<SignMessageParams>()
   })
 })
 
@@ -124,20 +227,35 @@ describe('ChainSigner interface', () => {
     expectTypeOf<ChainSigner['validateMnemonic']>().returns.toBeBoolean()
   })
 
-  it('derivePrivateKey should return Promise<HexString>', () => {
-    expectTypeOf<ChainSigner['derivePrivateKey']>().returns.toEqualTypeOf<Promise<string>>()
-  })
-
-  it('getAddress should return Address', () => {
+  it('getAddress should return string', () => {
     expectTypeOf<ChainSigner['getAddress']>().returns.toBeString()
   })
 
-  it('signTransaction should return Promise<HexString>', () => {
+  it('signTransaction should accept SignTransactionParams and return Promise<string>', () => {
     expectTypeOf<ChainSigner['signTransaction']>().returns.toEqualTypeOf<Promise<string>>()
+  })
+})
+
+describe('LegacyChainSigner interface', () => {
+  it('should have all required methods with positional args', () => {
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('generateMnemonic')
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('validateMnemonic')
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('derivePrivateKey')
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('getAddress')
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('signTransaction')
+    expectTypeOf<LegacyChainSigner>().toHaveProperty('signMessage')
+  })
+
+  it('derivePrivateKey should return Promise<HexString>', () => {
+    expectTypeOf<LegacyChainSigner['derivePrivateKey']>().returns.toEqualTypeOf<Promise<string>>()
+  })
+
+  it('signTransaction should return Promise<HexString>', () => {
+    expectTypeOf<LegacyChainSigner['signTransaction']>().returns.toEqualTypeOf<Promise<string>>()
   })
 
   it('signMessage should return Promise<HexString>', () => {
-    expectTypeOf<ChainSigner['signMessage']>().returns.toEqualTypeOf<Promise<string>>()
+    expectTypeOf<LegacyChainSigner['signMessage']>().returns.toEqualTypeOf<Promise<string>>()
   })
 })
 
@@ -161,6 +279,85 @@ describe('ChainProvider interface', () => {
 
   it('estimateFee should return Promise<FeeEstimate>', () => {
     expectTypeOf<ChainProvider['estimateFee']>().returns.toEqualTypeOf<Promise<FeeEstimate>>()
+  })
+
+  it('getNativeBalances should be an optional method returning Promise<Balance[]>', () => {
+    // getNativeBalances is optional (marked with ?)
+    type HasGetNativeBalances = Required<ChainProvider>
+    expectTypeOf<HasGetNativeBalances['getNativeBalances']>().returns.toEqualTypeOf<Promise<Balance[]>>()
+  })
+})
+
+describe('ProviderConfig', () => {
+  it('EndpointStrategy should be a union of strategies', () => {
+    const strategy1: EndpointStrategy = 'failover'
+    const strategy2: EndpointStrategy = 'round-robin'
+    const strategy3: EndpointStrategy = 'fastest'
+    expectTypeOf(strategy1).toMatchTypeOf<EndpointStrategy>()
+    expectTypeOf(strategy2).toMatchTypeOf<EndpointStrategy>()
+    expectTypeOf(strategy3).toMatchTypeOf<EndpointStrategy>()
+  })
+
+  it('EndpointConfig should have url and optional headers', () => {
+    expectTypeOf<EndpointConfig>().toHaveProperty('url')
+    expectTypeOf<EndpointConfig['url']>().toBeString()
+
+    const config: EndpointConfig = { url: 'https://rpc.example.com' }
+    expectTypeOf(config).toMatchTypeOf<EndpointConfig>()
+
+    const configWithHeaders: EndpointConfig = {
+      url: 'https://rpc.example.com',
+      headers: { Authorization: 'Bearer token' },
+    }
+    expectTypeOf(configWithHeaders).toMatchTypeOf<EndpointConfig>()
+  })
+
+  it('EndpointInput should accept various formats', () => {
+    const str: EndpointInput = 'https://rpc.example.com'
+    expectTypeOf(str).toMatchTypeOf<EndpointInput>()
+
+    const config: EndpointInput = { url: 'https://rpc.example.com' }
+    expectTypeOf(config).toMatchTypeOf<EndpointInput>()
+
+    const strArr: EndpointInput = ['https://rpc1.example.com', 'https://rpc2.example.com']
+    expectTypeOf(strArr).toMatchTypeOf<EndpointInput>()
+
+    const configArr: EndpointInput = [{ url: 'https://rpc1.example.com' }, { url: 'https://rpc2.example.com' }]
+    expectTypeOf(configArr).toMatchTypeOf<EndpointInput>()
+  })
+
+  it('ProviderConfig should have correct shape', () => {
+    expectTypeOf<ProviderConfig>().toHaveProperty('endpoints')
+
+    // flat endpoint
+    const flatConfig: ProviderConfig = {
+      endpoints: 'https://rpc.example.com',
+    }
+    expectTypeOf(flatConfig).toMatchTypeOf<ProviderConfig>()
+
+    // categorized endpoints
+    const catConfig: ProviderConfig = {
+      endpoints: {
+        rpc: 'https://rpc.example.com',
+        rest: 'https://rest.example.com',
+      },
+      strategy: 'failover',
+      timeoutMs: 5000,
+      retries: 3,
+    }
+    expectTypeOf(catConfig).toMatchTypeOf<ProviderConfig>()
+
+    // with lcd, indexer, mirror
+    const fullConfig: ProviderConfig = {
+      endpoints: {
+        rpc: ['https://rpc1.example.com', 'https://rpc2.example.com'],
+        lcd: { url: 'https://lcd.example.com', headers: { 'X-Api-Key': 'key' } },
+        indexer: 'https://indexer.example.com',
+        mirror: 'https://mirror.example.com',
+      },
+      strategy: 'round-robin',
+    }
+    expectTypeOf(fullConfig).toMatchTypeOf<ProviderConfig>()
   })
 })
 
