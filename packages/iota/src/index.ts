@@ -1,4 +1,8 @@
-export { IotaSigner } from './signer.js'
+export {
+  IotaSigner,
+  serializeTransactionEssence,
+  buildTransactionPayload,
+} from './signer.js'
 export { IotaProvider } from './provider.js'
 export type { IotaProviderConfig } from './provider.js'
 export type {

@@ -12,6 +12,7 @@ import { hmac } from '@noble/hashes/hmac'
 import { blake2b } from '@noble/hashes/blake2b'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 import { bech32 } from '@scure/base'
+import type { IotaTransactionEssence } from './types.js'
 
 // @noble/ed25519 v2 requires setting the sha512 hash function
 ed25519.etc.sha512Sync = (...m: Uint8Array[]) => {
@@ -23,6 +24,15 @@ const IOTA_HRP = 'iota'
 
 /** Ed25519 address type byte per IOTA protocol. */
 const ED25519_ADDRESS_TYPE = 0x00
+
+/** Stardust protocol constants */
+const TRANSACTION_PAYLOAD_TYPE = 6
+const REGULAR_ESSENCE_TYPE = 1
+const UTXO_INPUT_TYPE = 0
+const BASIC_OUTPUT_TYPE = 3
+const ADDRESS_UNLOCK_CONDITION_TYPE = 0
+const SIGNATURE_UNLOCK_TYPE = 0
+const ED25519_SIGNATURE_TYPE = 0
 
 /**
  * Strip the '0x' prefix from a hex string if present.
@@ -36,6 +46,271 @@ function stripHexPrefix(hex: string): string {
  */
 function addHexPrefix(hex: string): string {
   return hex.startsWith('0x') ? hex : `0x${hex}`
+}
+
+// ---- Binary serialization helpers (little-endian) ----
+
+/**
+ * Write a single unsigned byte to a buffer.
+ */
+function writeU8(value: number): Uint8Array {
+  const buf = new Uint8Array(1)
+  buf[0] = value & 0xff
+  return buf
+}
+
+/**
+ * Write a 16-bit unsigned integer in little-endian format.
+ */
+function writeU16LE(value: number): Uint8Array {
+  const buf = new Uint8Array(2)
+  buf[0] = value & 0xff
+  buf[1] = (value >>> 8) & 0xff
+  return buf
+}
+
+/**
+ * Write a 32-bit unsigned integer in little-endian format.
+ */
+function writeU32LE(value: number): Uint8Array {
+  const buf = new Uint8Array(4)
+  buf[0] = value & 0xff
+  buf[1] = (value >>> 8) & 0xff
+  buf[2] = (value >>> 16) & 0xff
+  buf[3] = (value >>> 24) & 0xff
+  return buf
+}
+
+/**
+ * Write a 64-bit unsigned integer in little-endian format from a bigint.
+ */
+function writeU64LE(value: bigint): Uint8Array {
+  const buf = new Uint8Array(8)
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number((value >> BigInt(i * 8)) & 0xffn)
+  }
+  return buf
+}
+
+/**
+ * Concatenate multiple Uint8Arrays into a single buffer.
+ */
+function concatBytes(...arrays: Uint8Array[]): Uint8Array {
+  let totalLength = 0
+  for (const arr of arrays) {
+    totalLength += arr.length
+  }
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const arr of arrays) {
+    result.set(arr, offset)
+    offset += arr.length
+  }
+  return result
+}
+
+// ---- IOTA Stardust binary serialization ----
+
+/**
+ * Serialize a UTXO input in Stardust binary format.
+ *
+ * Format:
+ *   input_type: u8 (0 = UTXO)
+ *   transaction_id: 32 bytes
+ *   transaction_output_index: u16 LE
+ */
+function serializeUtxoInput(input: {
+  transactionId: string
+  transactionOutputIndex: number
+}): Uint8Array {
+  const txIdBytes = hexToBytes(stripHexPrefix(input.transactionId))
+  if (txIdBytes.length !== 32) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid transaction ID length: expected 32 bytes, got ${txIdBytes.length}`,
+    )
+  }
+  return concatBytes(
+    writeU8(UTXO_INPUT_TYPE),
+    txIdBytes,
+    writeU16LE(input.transactionOutputIndex),
+  )
+}
+
+/**
+ * Serialize a BasicOutput in Stardust binary format.
+ *
+ * Format:
+ *   output_type: u8 (3 = BasicOutput)
+ *   amount: u64 LE
+ *   native_tokens_count: u8 (0)
+ *   unlock_conditions_count: u8 (1)
+ *   unlock_condition_type: u8 (0 = AddressUnlockCondition)
+ *   address_type: u8 (0 = Ed25519)
+ *   address_hash: 32 bytes
+ *   features_count: u8 (0)
+ */
+function serializeBasicOutput(output: {
+  amount: string
+  unlockConditions: Array<{
+    type: number
+    address: { type: number; pubKeyHash: string }
+  }>
+}): Uint8Array {
+  const amount = BigInt(output.amount)
+
+  if (output.unlockConditions.length === 0) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      'BasicOutput must have at least one unlock condition',
+    )
+  }
+
+  const addrCondition = output.unlockConditions[0]
+  const addressHash = hexToBytes(stripHexPrefix(addrCondition.address.pubKeyHash))
+  if (addressHash.length !== 32) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid address hash length: expected 32 bytes, got ${addressHash.length}`,
+    )
+  }
+
+  return concatBytes(
+    writeU8(BASIC_OUTPUT_TYPE),       // output_type
+    writeU64LE(amount),               // amount
+    writeU8(0),                       // native_tokens_count = 0
+    writeU8(1),                       // unlock_conditions_count = 1
+    writeU8(ADDRESS_UNLOCK_CONDITION_TYPE), // unlock_condition_type
+    writeU8(addrCondition.address.type),    // address_type (0 = Ed25519)
+    addressHash,                      // address_hash (32 bytes)
+    writeU8(0),                       // features_count = 0
+  )
+}
+
+/**
+ * Compute the inputs commitment: blake2b-256 hash of all serialized output IDs
+ * consumed by the inputs.
+ *
+ * Each output ID = transaction_id (32 bytes) || output_index (u16 LE).
+ */
+function computeInputsCommitment(
+  inputs: Array<{ transactionId: string; transactionOutputIndex: number }>,
+): Uint8Array {
+  const parts: Uint8Array[] = []
+  for (const input of inputs) {
+    const txIdBytes = hexToBytes(stripHexPrefix(input.transactionId))
+    parts.push(concatBytes(txIdBytes, writeU16LE(input.transactionOutputIndex)))
+  }
+  const allOutputIds = concatBytes(...parts)
+  return blake2b(allOutputIds, { dkLen: 32 })
+}
+
+/**
+ * Serialize a complete TransactionEssence in Stardust binary format.
+ *
+ * Format:
+ *   essence_type: u8 (1 = regular)
+ *   network_id: u64 LE
+ *   inputs_count: u16 LE
+ *   inputs: [serialized UTXO inputs]
+ *   inputs_commitment: 32 bytes (blake2b-256)
+ *   outputs_count: u16 LE
+ *   outputs: [serialized BasicOutputs]
+ *   payload_length: u32 LE (0 = no payload)
+ */
+export function serializeTransactionEssence(essence: IotaTransactionEssence): Uint8Array {
+  const networkId = BigInt(essence.networkId)
+
+  // Serialize inputs
+  const serializedInputs: Uint8Array[] = []
+  for (const input of essence.inputs) {
+    serializedInputs.push(serializeUtxoInput(input))
+  }
+
+  // Compute inputs commitment
+  const inputsCommitment = computeInputsCommitment(essence.inputs)
+
+  // Serialize outputs
+  const serializedOutputs: Uint8Array[] = []
+  for (const output of essence.outputs) {
+    serializedOutputs.push(serializeBasicOutput(output))
+  }
+
+  return concatBytes(
+    writeU8(REGULAR_ESSENCE_TYPE),                // essence_type
+    writeU64LE(networkId),                         // network_id
+    writeU16LE(essence.inputs.length),             // inputs_count
+    ...serializedInputs,                           // inputs
+    inputsCommitment,                              // inputs_commitment (32 bytes)
+    writeU16LE(essence.outputs.length),            // outputs_count
+    ...serializedOutputs,                          // outputs
+    writeU32LE(0),                                 // payload_length (0 = no nested payload)
+  )
+}
+
+/**
+ * Serialize a signature unlock in Stardust binary format.
+ *
+ * Format:
+ *   unlock_type: u8 (0 = Signature)
+ *   signature_type: u8 (0 = Ed25519)
+ *   public_key: 32 bytes
+ *   signature: 64 bytes
+ */
+function serializeSignatureUnlock(
+  publicKey: Uint8Array,
+  signature: Uint8Array,
+): Uint8Array {
+  if (publicKey.length !== 32) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid public key length: expected 32 bytes, got ${publicKey.length}`,
+    )
+  }
+  if (signature.length !== 64) {
+    throw new ChainKitError(
+      ErrorCode.INVALID_PARAMS,
+      `Invalid signature length: expected 64 bytes, got ${signature.length}`,
+    )
+  }
+  return concatBytes(
+    writeU8(SIGNATURE_UNLOCK_TYPE),   // unlock_type
+    writeU8(ED25519_SIGNATURE_TYPE),  // signature_type
+    publicKey,                        // public_key (32 bytes)
+    signature,                        // signature (64 bytes)
+  )
+}
+
+/**
+ * Build a complete TransactionPayload in Stardust binary format.
+ *
+ * Format:
+ *   payload_type: u32 LE (6 = transaction)
+ *   essence: serialized TransactionEssence
+ *   unlocks_count: u16 LE
+ *   unlocks: [serialized unlocks]
+ */
+export function buildTransactionPayload(
+  essence: IotaTransactionEssence,
+  publicKey: Uint8Array,
+  signature: Uint8Array,
+): Uint8Array {
+  const essenceBytes = serializeTransactionEssence(essence)
+  const unlock = serializeSignatureUnlock(publicKey, signature)
+
+  // All inputs use the same key => first unlock is Signature, rest are Reference(0)
+  const unlockParts: Uint8Array[] = [unlock]
+  for (let i = 1; i < essence.inputs.length; i++) {
+    // Reference unlock: type=1, reference_index=u16 LE (0)
+    unlockParts.push(concatBytes(writeU8(1), writeU16LE(0)))
+  }
+
+  return concatBytes(
+    writeU32LE(TRANSACTION_PAYLOAD_TYPE),        // payload_type
+    essenceBytes,                                 // transaction essence
+    writeU16LE(essence.inputs.length),            // unlocks_count
+    ...unlockParts,                               // unlocks
+  )
 }
 
 /**
@@ -202,10 +477,21 @@ export class IotaSigner implements ChainSigner {
   }
 
   /**
-   * Sign an IOTA transaction.
-   * The transaction data is expected to be the serialized transaction essence
-   * in tx.data as a hex string.
-   * Returns the ED25519 signature as a hex string.
+   * Sign an IOTA transaction with full Stardust binary serialization.
+   *
+   * Supports two modes:
+   * 1. **Structured mode**: Pass a JSON-serialized `IotaTransactionEssence` in `tx.data`.
+   *    Returns the full TransactionPayload as a hex string, ready for broadcast.
+   * 2. **Raw mode**: Pass raw pre-serialized essence bytes (hex) in `tx.data` with
+   *    `tx.fee.mode` set to `"raw"`. Returns just the ED25519 signature.
+   *
+   * Structured mode flow:
+   *   - Parses the `IotaTransactionEssence` from `tx.data`
+   *   - Serializes the essence to binary (Stardust format)
+   *   - Computes blake2b-256 hash of the essence bytes
+   *   - Signs the hash with ED25519
+   *   - Builds the complete TransactionPayload with unlocks
+   *   - Returns the full payload as a hex string
    */
   async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
@@ -217,23 +503,70 @@ export class IotaSigner implements ChainSigner {
       )
     }
 
-    // The transaction essence to sign should be in tx.data (hex-encoded)
     if (!tx.data) {
       throw new ChainKitError(
         ErrorCode.INVALID_PARAMS,
-        'Transaction data (serialized essence) is required for IOTA signing',
+        'Transaction data is required for IOTA signing',
       )
     }
 
-    const essenceBytes = hexToBytes(stripHexPrefix(tx.data))
+    const publicKey = ed25519.getPublicKey(pkBytes)
 
-    // IOTA signs the blake2b-256 hash of the transaction essence
+    // Check if raw mode is requested (backward-compatible: pre-serialized essence bytes)
+    if (tx.fee?.mode === 'raw') {
+      const essenceBytes = hexToBytes(stripHexPrefix(tx.data))
+      const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
+      const signature = ed25519.sign(essenceHash, pkBytes)
+      return addHexPrefix(bytesToHex(signature))
+    }
+
+    // Structured mode: parse IotaTransactionEssence from tx.data
+    let essence: IotaTransactionEssence
+    try {
+      essence = JSON.parse(tx.data) as IotaTransactionEssence
+    } catch {
+      // Fallback: treat as raw hex essence bytes (backward compatibility)
+      const essenceBytes = hexToBytes(stripHexPrefix(tx.data))
+      const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
+      const signature = ed25519.sign(essenceHash, pkBytes)
+      return addHexPrefix(bytesToHex(signature))
+    }
+
+    // Validate the parsed essence has required fields
+    if (!essence.networkId || !essence.inputs || !essence.outputs) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        'Invalid transaction essence: networkId, inputs, and outputs are required',
+      )
+    }
+
+    if (essence.inputs.length === 0) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        'Transaction must have at least one input',
+      )
+    }
+
+    if (essence.outputs.length === 0) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        'Transaction must have at least one output',
+      )
+    }
+
+    // Serialize the transaction essence to binary
+    const essenceBytes = serializeTransactionEssence(essence)
+
+    // Hash the essence with blake2b-256
     const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
 
-    // Sign with ED25519
+    // Sign the hash with ED25519
     const signature = ed25519.sign(essenceHash, pkBytes)
 
-    return addHexPrefix(bytesToHex(signature))
+    // Build the complete TransactionPayload
+    const payload = buildTransactionPayload(essence, publicKey, signature)
+
+    return addHexPrefix(bytesToHex(payload))
   }
 
   /**

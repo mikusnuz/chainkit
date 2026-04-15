@@ -6,6 +6,7 @@ import {
   ErrorCode,
 } from '@chainkit/core'
 import type { ChainSigner, HexString, Address, UnsignedTx } from '@chainkit/core'
+import type { CardanoTransactionData } from './types.js'
 import * as ed25519 from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha512'
 import { hmac } from '@noble/hashes/hmac'
@@ -16,6 +17,185 @@ import { bech32 } from '@scure/base'
 // @noble/ed25519 v2 requires setting the sha512 hash function
 ed25519.etc.sha512Sync = (...m: Uint8Array[]) => {
   return sha512(ed25519.etc.concatBytes(...m))
+}
+
+// ---------------------------------------------------------------------------
+// Minimal CBOR encoder (RFC 7049) -- no external dependencies
+// Exported for testing; these are not part of the public API contract.
+// ---------------------------------------------------------------------------
+
+/**
+ * Concatenate multiple Uint8Arrays into one.
+ */
+function concatBytes(...arrays: Uint8Array[]): Uint8Array {
+  let totalLength = 0
+  for (const arr of arrays) totalLength += arr.length
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const arr of arrays) {
+    result.set(arr, offset)
+    offset += arr.length
+  }
+  return result
+}
+
+/**
+ * Encode a CBOR header (major type + argument).
+ * Major type occupies the top 3 bits of the initial byte.
+ */
+export function cborEncodeHeader(majorType: number, value: number | bigint): Uint8Array {
+  const mt = majorType << 5
+  const v = typeof value === 'bigint' ? value : BigInt(value)
+
+  if (v < 24n) {
+    return new Uint8Array([mt | Number(v)])
+  }
+  if (v < 256n) {
+    return new Uint8Array([mt | 24, Number(v)])
+  }
+  if (v < 65536n) {
+    return new Uint8Array([mt | 25, Number(v >> 8n) & 0xff, Number(v) & 0xff])
+  }
+  if (v < 4294967296n) {
+    return new Uint8Array([
+      mt | 26,
+      Number(v >> 24n) & 0xff,
+      Number(v >> 16n) & 0xff,
+      Number(v >> 8n) & 0xff,
+      Number(v) & 0xff,
+    ])
+  }
+  // uint64
+  return new Uint8Array([
+    mt | 27,
+    Number(v >> 56n) & 0xff,
+    Number(v >> 48n) & 0xff,
+    Number(v >> 40n) & 0xff,
+    Number(v >> 32n) & 0xff,
+    Number(v >> 24n) & 0xff,
+    Number(v >> 16n) & 0xff,
+    Number(v >> 8n) & 0xff,
+    Number(v) & 0xff,
+  ])
+}
+
+/**
+ * Encode an unsigned integer (major type 0).
+ */
+export function cborEncodeUint(value: number | bigint): Uint8Array {
+  return cborEncodeHeader(0, value)
+}
+
+/**
+ * Encode a byte string (major type 2).
+ */
+export function cborEncodeBytes(data: Uint8Array): Uint8Array {
+  return concatBytes(cborEncodeHeader(2, data.length), data)
+}
+
+/**
+ * Encode a CBOR array (major type 4).
+ */
+export function cborEncodeArray(items: Uint8Array[]): Uint8Array {
+  return concatBytes(cborEncodeHeader(4, items.length), ...items)
+}
+
+/**
+ * Encode a CBOR map (major type 5).
+ * Entries are [key, value] pairs, both already CBOR-encoded.
+ */
+export function cborEncodeMap(entries: [Uint8Array, Uint8Array][]): Uint8Array {
+  const flatEntries: Uint8Array[] = []
+  for (const [k, v] of entries) {
+    flatEntries.push(k, v)
+  }
+  return concatBytes(cborEncodeHeader(5, entries.length), ...flatEntries)
+}
+
+/**
+ * Encode CBOR boolean true (0xf5).
+ */
+export function cborEncodeTrue(): Uint8Array {
+  return new Uint8Array([0xf5])
+}
+
+/**
+ * Encode CBOR null (0xf6).
+ */
+export function cborEncodeNull(): Uint8Array {
+  return new Uint8Array([0xf6])
+}
+
+// ---------------------------------------------------------------------------
+// Cardano transaction CBOR serialization (Shelley era)
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode a bech32 Cardano address to its raw bytes.
+ */
+function decodeAddress(addr: string): Uint8Array {
+  const decoded = bech32.decode(addr as `${string}1${string}`, 1023)
+  return bech32.fromWords(decoded.words)
+}
+
+/**
+ * CBOR-encode a Shelley-era TransactionBody as a map:
+ *   {
+ *     0: [[txHash(32 bytes), outputIndex], ...],  // inputs
+ *     1: [[address(bytes), amount(uint)], ...],    // outputs
+ *     2: fee (uint),                               // fee in lovelace
+ *     3: ttl (uint),                               // slot number
+ *   }
+ */
+export function encodeTransactionBody(txData: CardanoTransactionData): Uint8Array {
+  // Encode inputs: set of [tx_hash, output_index]
+  const encodedInputs = txData.inputs.map((input) => {
+    const txHashBytes = hexToBytes(stripHexPrefix(input.txHash))
+    return cborEncodeArray([cborEncodeBytes(txHashBytes), cborEncodeUint(input.outputIndex)])
+  })
+  const inputsArray = cborEncodeArray(encodedInputs)
+
+  // Encode outputs: [[address_bytes, amount], ...]
+  const encodedOutputs = txData.outputs.map((output) => {
+    const addrBytes = decodeAddress(output.address)
+    return cborEncodeArray([cborEncodeBytes(addrBytes), cborEncodeUint(BigInt(output.amount))])
+  })
+  const outputsArray = cborEncodeArray(encodedOutputs)
+
+  // Fee
+  const fee = cborEncodeUint(BigInt(txData.fee))
+
+  // TTL
+  const ttl = cborEncodeUint(txData.ttl)
+
+  // Build the map with integer keys 0-3
+  return cborEncodeMap([
+    [cborEncodeUint(0), inputsArray],
+    [cborEncodeUint(1), outputsArray],
+    [cborEncodeUint(2), fee],
+    [cborEncodeUint(3), ttl],
+  ])
+}
+
+/**
+ * CBOR-encode a TransactionWitnessSet:
+ *   { 0: [[vkey(32 bytes), signature(64 bytes)]] }
+ */
+export function encodeWitnessSet(publicKey: Uint8Array, signature: Uint8Array): Uint8Array {
+  const vkeyWitness = cborEncodeArray([cborEncodeBytes(publicKey), cborEncodeBytes(signature)])
+  const witnessArray = cborEncodeArray([vkeyWitness])
+  return cborEncodeMap([[cborEncodeUint(0), witnessArray]])
+}
+
+/**
+ * Build and CBOR-encode a full Shelley transaction:
+ *   [transaction_body, witness_set, true, null]
+ */
+export function encodeFullTransaction(
+  txBodyCbor: Uint8Array,
+  witnessSetCbor: Uint8Array,
+): Uint8Array {
+  return cborEncodeArray([txBodyCbor, witnessSetCbor, cborEncodeTrue(), cborEncodeNull()])
 }
 
 /**
@@ -188,11 +368,18 @@ export class CardanoSigner implements ChainSigner {
   /**
    * Sign a Cardano transaction.
    *
-   * The transaction body hash should be provided in tx.data as a hex string.
-   * Returns the ED25519 signature as a hex string.
+   * Accepts either structured Cardano transaction data (via tx.extra.cardano)
+   * or a pre-computed body hash (via tx.data) for backward compatibility.
    *
-   * In a full Cardano implementation, the transaction body would be CBOR-serialized
-   * and then blake2b-256 hashed before signing. Here we sign the hash provided in tx.data.
+   * When structured data is provided:
+   * 1. CBOR-encodes the TransactionBody
+   * 2. blake2b-256 hashes the CBOR bytes
+   * 3. ED25519 signs the hash
+   * 4. Assembles the full Transaction with witness set
+   * 5. Returns the CBOR-encoded transaction as hex
+   *
+   * When only tx.data is provided (legacy mode):
+   * Signs the provided hash and returns just the signature.
    */
   async signTransaction(tx: UnsignedTx, privateKey: HexString): Promise<HexString> {
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
@@ -204,10 +391,46 @@ export class CardanoSigner implements ChainSigner {
       )
     }
 
+    const publicKey = ed25519.getPublicKey(pkBytes)
+
+    // Structured Cardano transaction data path
+    const cardanoData = tx.extra?.cardano as CardanoTransactionData | undefined
+    if (cardanoData) {
+      if (!cardanoData.inputs || cardanoData.inputs.length === 0) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have at least one input',
+        )
+      }
+      if (!cardanoData.outputs || cardanoData.outputs.length === 0) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have at least one output',
+        )
+      }
+
+      // 1. CBOR encode the transaction body
+      const txBodyCbor = encodeTransactionBody(cardanoData)
+
+      // 2. blake2b-256 hash of the CBOR bytes
+      const txBodyHash = blake2b(txBodyCbor, { dkLen: 32 })
+
+      // 3. ED25519 sign the hash
+      const signature = ed25519.sign(txBodyHash, pkBytes)
+
+      // 4. Build witness set
+      const witnessSetCbor = encodeWitnessSet(publicKey, signature)
+
+      // 5. Assemble and return full serialized transaction
+      const fullTxCbor = encodeFullTransaction(txBodyCbor, witnessSetCbor)
+      return addHexPrefix(bytesToHex(fullTxCbor))
+    }
+
+    // Legacy mode: sign a pre-computed hash from tx.data
     if (!tx.data) {
       throw new ChainKitError(
         ErrorCode.INVALID_PARAMS,
-        'Transaction data (CBOR-serialized body hash) is required for Cardano signing',
+        'Transaction data is required: provide either extra.cardano (structured) or data (body hash hex)',
       )
     }
 
