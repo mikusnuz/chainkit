@@ -29,45 +29,41 @@ const VERSION_MAINNET_SINGLE_SIG = 22
 const VERSION_TESTNET_SINGLE_SIG = 26
 
 /**
- * Encode bytes to c32 string.
- * Based on the Stacks c32check specification.
+ * Encode bytes to c32 string using BigInt base conversion.
  */
 function c32encode(data: Uint8Array): string {
-  // Convert bytes to a BigInt
+  if (data.length === 0) return C32_ALPHABET[0]
+
+  // Count leading zero bytes
+  let leadingZeros = 0
+  for (const byte of data) {
+    if (byte === 0) {
+      leadingZeros++
+    } else {
+      break
+    }
+  }
+
+  // Convert bytes to BigInt
   let num = 0n
   for (const byte of data) {
     num = (num << 8n) | BigInt(byte)
   }
 
   if (num === 0n) {
-    // Count leading zeros
-    let result = ''
-    for (const byte of data) {
-      if (byte === 0) {
-        result += C32_ALPHABET[0]
-      } else {
-        break
-      }
-    }
-    if (result.length === 0) result = C32_ALPHABET[0]
-    return result
+    return C32_ALPHABET[0].repeat(leadingZeros || 1)
   }
 
   // Convert to c32
   const chars: string[] = []
   while (num > 0n) {
-    const remainder = Number(num % 32n)
-    chars.push(C32_ALPHABET[remainder])
+    chars.push(C32_ALPHABET[Number(num % 32n)])
     num = num / 32n
   }
 
-  // Add leading zeros
-  for (const byte of data) {
-    if (byte === 0) {
-      chars.push(C32_ALPHABET[0])
-    } else {
-      break
-    }
+  // Prepend leading zeros
+  for (let i = 0; i < leadingZeros; i++) {
+    chars.push(C32_ALPHABET[0])
   }
 
   return chars.reverse().join('')
@@ -132,7 +128,8 @@ function c32checkDecode(encoded: string): { version: number; data: Uint8Array } 
   }
 
   const dataEncoded = encoded.slice(1)
-  const dataWithChecksum = c32decode(dataEncoded)
+  // hash160 (20 bytes) + checksum (4 bytes) = 24 bytes expected
+  const dataWithChecksum = c32decode(dataEncoded, 24)
 
   if (dataWithChecksum.length < 4) {
     throw new ChainKitError(
@@ -159,14 +156,27 @@ function c32checkDecode(encoded: string): { version: number; data: Uint8Array } 
 }
 
 /**
- * Decode a c32 string to bytes.
+ * Normalize c32 string: uppercase, replace ambiguous characters.
  */
-function c32decode(encoded: string): Uint8Array {
-  const upper = encoded.toUpperCase()
+function c32normalize(input: string): string {
+  return input
+    .toUpperCase()
+    .replace(/O/g, '0')
+    .replace(/[IL]/g, '1')
+}
 
-  // Count leading zeros (represented by '0' in c32)
+/**
+ * Decode a c32 string to bytes.
+ * Uses BigInt for reliable base conversion, with proper length preservation.
+ */
+function c32decode(encoded: string, expectedBytes?: number): Uint8Array {
+  const normalized = c32normalize(encoded)
+
+  if (normalized.length === 0) return new Uint8Array(0)
+
+  // Count leading c32 zeros
   let leadingZeros = 0
-  for (const ch of upper) {
+  for (const ch of normalized) {
     if (ch === '0') {
       leadingZeros++
     } else {
@@ -176,7 +186,7 @@ function c32decode(encoded: string): Uint8Array {
 
   // Convert c32 to BigInt
   let num = 0n
-  for (const ch of upper) {
+  for (const ch of normalized) {
     const idx = C32_ALPHABET.indexOf(ch)
     if (idx < 0) {
       throw new ChainKitError(
@@ -188,15 +198,22 @@ function c32decode(encoded: string): Uint8Array {
   }
 
   // Convert BigInt to bytes
-  const hexStr = num === 0n ? '' : num.toString(16)
-  const padded = hexStr.length % 2 === 0 ? hexStr : '0' + hexStr
-  const numBytes = padded.length > 0 ? hexToBytes(padded) : new Uint8Array(0)
+  let hexStr = num === 0n ? '' : num.toString(16)
+  if (hexStr.length % 2 !== 0) {
+    hexStr = '0' + hexStr
+  }
+  const numBytes = hexStr.length > 0 ? hexToBytes(hexStr) : new Uint8Array(0)
+
+  // If expectedBytes is provided, pad to that length
+  if (expectedBytes && (leadingZeros + numBytes.length) < expectedBytes) {
+    const result = new Uint8Array(expectedBytes)
+    result.set(numBytes, expectedBytes - numBytes.length)
+    return result
+  }
 
   // Prepend leading zero bytes
   const result = new Uint8Array(leadingZeros + numBytes.length)
-  // Leading zeros are already 0 in the Uint8Array
   result.set(numBytes, leadingZeros)
-
   return result
 }
 
@@ -204,8 +221,10 @@ function c32decode(encoded: string): Uint8Array {
  * Convert a hash160 (20 bytes) to a Stacks address.
  */
 function hash160ToAddress(hash160: Uint8Array, version: number): string {
-  const prefix = version === VERSION_MAINNET_SINGLE_SIG ? 'SP' : 'ST'
-  return prefix + c32checkEncode(version, hash160)
+  // Address format: 'S' + c32checkEncode(version, hash160)
+  // c32checkEncode prepends the version char (P for 22, T for 26),
+  // so the result is 'S' + 'P' + data = 'SP...' for mainnet
+  return 'S' + c32checkEncode(version, hash160)
 }
 
 /**
@@ -217,10 +236,12 @@ function isValidStacksAddress(address: string): boolean {
   }
 
   try {
-    const prefix = address.slice(0, 2)
-    const encoded = address.slice(2)
+    // Address format: 'S' + c32checkEncoded
+    // The second char is the version char from c32checkEncode
+    const encoded = address.slice(1) // Remove 'S' prefix
     const { version, data } = c32checkDecode(encoded)
 
+    const prefix = address.slice(0, 2)
     // Check version matches prefix
     if (prefix === 'SP' && version !== VERSION_MAINNET_SINGLE_SIG) return false
     if (prefix === 'ST' && version !== VERSION_TESTNET_SINGLE_SIG) return false
