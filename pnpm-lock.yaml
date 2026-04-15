@@ -171,6 +171,21 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/nostr:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/curves':
+        specifier: ^1.9.0
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/solana:
     dependencies:
       '@chainkit/core':
@@ -290,6 +305,18 @@ importers:
       '@scure/base':
         specifier: ^1.2.0
         version: 1.2.6
+
+  packages/zkspace:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
 
 packages:
 
