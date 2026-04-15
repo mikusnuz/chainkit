@@ -229,7 +229,7 @@ describe('TonProvider', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1)
 
       const [url, options] = mockFetch.mock.calls[0]
-      expect(new URL(url).pathname).toBe('/api/v2/sendBoc')
+      expect(new URL(url).pathname).toBe('/api/v2/sendBocReturnHash')
       expect(options.method).toBe('POST')
 
       const body = JSON.parse(options.body)

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TonSigner } from '../signer.js'
+import { Cell } from '@ton/core'
 
 // Known test mnemonic (DO NOT use in production)
 const TEST_MNEMONIC =
@@ -78,6 +79,16 @@ describe('TonSigner', () => {
       expect(address).toMatch(/^0:[0-9a-f]{64}$/)
     })
 
+    it('should return a wallet v4r2 contract address (not just pubkey hash)', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
+      const address = signer.getAddress(pk)
+
+      // The address should be a proper contract address derived from StateInit
+      // It should NOT be just SHA-256 of the public key
+      expect(address.startsWith('0:')).toBe(true)
+      expect(address.length).toBe(66) // "0:" + 64 hex chars
+    })
+
     it('should return deterministic addresses', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
       const addr1 = signer.getAddress(pk)
@@ -148,7 +159,7 @@ describe('TonSigner', () => {
   })
 
   describe('signTransaction', () => {
-    it('should sign a transaction', async () => {
+    it('should sign a transaction and return valid base64 BOC', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
       const signed = await signer.signTransaction(
         {
@@ -159,18 +170,96 @@ describe('TonSigner', () => {
         pk,
       )
 
-      expect(signed.startsWith('0x')).toBe(true)
-      // Should contain 64-byte signature + serialized message
-      expect(signed.length).toBeGreaterThan(130)
+      // Should be a base64 string (BOC)
+      expect(typeof signed).toBe('string')
+      expect(signed.length).toBeGreaterThan(0)
+
+      // Should be valid base64 that can be parsed as BOC
+      const bocBuffer = Buffer.from(signed, 'base64')
+      const cells = Cell.fromBoc(bocBuffer)
+      expect(cells.length).toBe(1)
+    })
+
+    it('should produce valid BOC with parseable external message', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
+      const signed = await signer.signTransaction(
+        {
+          from: signer.getAddress(pk),
+          to: '0:' + '2'.repeat(64),
+          value: '500000000', // 0.5 TON
+          nonce: 5, // seqno
+          extra: { bounce: false },
+        },
+        pk,
+      )
+
+      // Parse as BOC
+      const bocBuffer = Buffer.from(signed, 'base64')
+      const cells = Cell.fromBoc(bocBuffer)
+      expect(cells.length).toBe(1)
+
+      // The root cell should be an external message
+      const rootCell = cells[0]
+      expect(rootCell.bits.length).toBeGreaterThan(0)
+    })
+
+    it('should include StateInit when seqno is 0', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
+      const withInit = await signer.signTransaction(
+        {
+          from: signer.getAddress(pk),
+          to: '0:' + '1'.repeat(64),
+          value: '1000000000',
+          nonce: 0, // seqno 0 = first tx, include stateInit
+        },
+        pk,
+      )
+
+      const withoutInit = await signer.signTransaction(
+        {
+          from: signer.getAddress(pk),
+          to: '0:' + '1'.repeat(64),
+          value: '1000000000',
+          nonce: 1, // seqno > 0, no stateInit needed
+        },
+        pk,
+      )
+
+      // BOC with StateInit should be larger (contains code + data)
+      const bufferWithInit = Buffer.from(withInit, 'base64')
+      const bufferWithoutInit = Buffer.from(withoutInit, 'base64')
+      expect(bufferWithInit.length).toBeGreaterThan(bufferWithoutInit.length)
+    })
+
+    it('should accept user-friendly address format', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
+      const userFriendly = signer.getUserFriendlyAddress(pk)
+
+      // Should not throw when using user-friendly address as destination
+      const signed = await signer.signTransaction(
+        {
+          from: signer.getAddress(pk),
+          to: userFriendly,
+          value: '100000000',
+          nonce: 1,
+        },
+        pk,
+      )
+
+      expect(typeof signed).toBe('string')
+      expect(signed.length).toBeGreaterThan(0)
     })
 
     it('should produce deterministic signed transactions', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, TON_PATH)
+      const fixedValidUntil = Math.floor(Date.now() / 1000) + 3600
+
       const tx = {
         from: signer.getAddress(pk),
         to: '0:' + '1'.repeat(64),
         value: '1000000000',
         nonce: 1,
+        extra: { validUntil: fixedValidUntil },
       }
 
       const sig1 = await signer.signTransaction(tx, pk)

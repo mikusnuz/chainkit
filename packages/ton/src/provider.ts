@@ -315,11 +315,12 @@ export class TonProvider
    * Broadcast a signed BOC (Bag of Cells) transaction.
    */
   async broadcastTransaction(signedTx: HexString): Promise<TxHash> {
-    // TON expects base64-encoded BOC in sendBoc
+    // signedTx is a base64-encoded BOC string from TonSigner.signTransaction()
+    // TON sendBocReturnHash expects base64-encoded BOC
     const boc = signedTx.startsWith('0x') ? signedTx.slice(2) : signedTx
 
-    const result = await this.post<{ hash: string }>('/sendBoc', { boc })
-    return result.hash ?? boc.slice(0, 64) // Return tx hash or first 32 bytes as identifier
+    const result = await this.post<{ hash: string }>('/sendBocReturnHash', { boc })
+    return result.hash ?? ''
   }
 
   /**
