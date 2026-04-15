@@ -285,6 +285,20 @@ export class StellarSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Stellar address (StrKey G... format).
+   * Decodes the base32 and verifies version byte (0x30) and CRC16 checksum.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('G')) return false
+      const { versionByte } = decodeStrKey(address)
+      return versionByte === 0x30
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

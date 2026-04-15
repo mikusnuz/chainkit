@@ -546,6 +546,14 @@ export class StacksSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Stacks address (SP... for mainnet, ST... for testnet).
+   * Uses c32check decoding with checksum verification.
+   */
+  validateAddress(address: string): boolean {
+    return isValidStacksAddress(address)
+  }
+
+  /**
    * Sign an arbitrary message with the Stacks prefix.
    */
   async signMessage(params: SignMessageParams): Promise<HexString> {

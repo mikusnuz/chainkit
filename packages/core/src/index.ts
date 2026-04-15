@@ -27,6 +27,9 @@ export type {
   TokenCapable,
   SubscriptionCapable,
   UtxoCapable,
+  EvmSignerCapable,
+  TypedDataDomain,
+  TypedDataField,
 } from './types/index.js'
 
 // Error classes & enums

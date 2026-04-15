@@ -448,6 +448,22 @@ export class CosmosSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Cosmos bech32 address.
+   * Verifies bech32 encoding and that the prefix matches.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      const decoded = bech32.decodeUnsafe(address as `${string}1${string}`)
+      if (!decoded) return false
+      if (decoded.prefix !== this.prefix) return false
+      const data = bech32.fromWords(decoded.words)
+      return data.length === 20
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message.
    * Uses the Cosmos ADR-036 style: SHA-256 hash of the message bytes.
    */

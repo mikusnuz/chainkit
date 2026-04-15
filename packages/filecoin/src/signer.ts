@@ -470,6 +470,14 @@ export class FilecoinSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Filecoin address.
+   * Supports f0 (ID), f1 (secp256k1), f2 (actor), f3 (BLS) address formats.
+   */
+  validateAddress(address: string): boolean {
+    return isValidFilecoinAddress(address)
+  }
+
+  /**
    * Sign an arbitrary message.
    * The message is hashed with blake2b-256 and signed with secp256k1.
    */

@@ -193,6 +193,19 @@ export class TronSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Tron address (base58check with 0x41 prefix, starts with 'T').
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('T')) return false
+      const payload = base58checkDecode(address)
+      return payload.length === 21 && payload[0] === 0x41
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message using Tron message signing.
    * Prepends the Tron message prefix: "\x19TRON Signed Message:\n" + message length
    */

@@ -307,6 +307,18 @@ export class StellarProvider
   }
 
   /**
+   * Get the account sequence number for a Stellar address.
+   */
+  async getNonce(address: Address): Promise<string> {
+    try {
+      const account = await this.horizonGet<{ sequence: string }>(`/accounts/${address}`)
+      return account.sequence
+    } catch {
+      return '0'
+    }
+  }
+
+  /**
    * Estimate transaction fees on Stellar.
    * Uses Horizon GET /fee_stats
    */
@@ -548,6 +560,13 @@ export class StellarProvider
         `Failed to fetch asset metadata: ${(err as Error).message}`,
       )
     }
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

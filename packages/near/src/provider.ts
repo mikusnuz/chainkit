@@ -200,6 +200,29 @@ export class NearProvider
   }
 
   /**
+   * Get the access key nonce for a NEAR account.
+   * Queries the access key for the given address and returns the nonce.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.rpc.request<{
+        keys: Array<{ access_key: { nonce: number } }>
+      }>('query', namedParams({
+        request_type: 'view_access_key_list',
+        finality: 'final',
+        account_id: address,
+      }))
+      // Return the nonce from the first key, or 0 if none
+      if (result.keys && result.keys.length > 0) {
+        return result.keys[0].access_key.nonce
+      }
+      return 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees on NEAR.
    * Uses the `gas_price` RPC method.
    */
@@ -455,6 +478,13 @@ export class NearProvider
       decimals: (metadata.decimals as number) ?? 0,
       totalSupply,
     }
+  }
+
+  /**
+   * Get balances for multiple NEP-141 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

@@ -163,6 +163,15 @@ export class BitcoinProvider
   }
 
   /**
+   * Get the UTXO count for an address (Bitcoin does not have a nonce concept).
+   * Returns the number of confirmed UTXOs as a proxy.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const utxos = await this.getUtxos(address)
+    return utxos.filter(u => u.confirmed).length
+  }
+
+  /**
    * Estimate transaction fees in sat/vByte.
    */
   async estimateFee(): Promise<FeeEstimate> {

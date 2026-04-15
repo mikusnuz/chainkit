@@ -76,6 +76,13 @@ export interface ChainSigner {
    * @returns The signature as a string (sync or async)
    */
   signMessage(params: SignMessageParams): Promise<string> | string
+
+  /**
+   * Validate whether a string is a valid address for this chain.
+   * @param address - The address string to validate
+   * @returns True if the address is valid for this chain
+   */
+  validateAddress(address: string): boolean
 }
 
 /**

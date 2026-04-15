@@ -205,6 +205,14 @@ export class KaiaProvider
   }
 
   /**
+   * Get the transaction count (nonce) for a Kaia address.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.rpc.request<string>('klay_getTransactionCount', [address, 'latest'])
+    return hexToNumber(result)
+  }
+
+  /**
    * Estimate transaction fees using EIP-1559 parameters.
    * Kaia uses a similar gas model to Ethereum.
    */
@@ -435,6 +443,13 @@ export class KaiaProvider
       decimals: hexToNumber(decimalsHex),
       totalSupply: hexToBigInt(totalSupplyHex).toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple KIP-7 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

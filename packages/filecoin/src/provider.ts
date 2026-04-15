@@ -176,6 +176,18 @@ export class FilecoinProvider
   }
 
   /**
+   * Get the nonce (message sequence number) for a Filecoin address.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.rpc.request<number>('Filecoin.MpoolGetNonce', [address])
+      return result
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees.
    * Uses Filecoin.GasEstimateMessageGas defaults for the current network.
    */
@@ -403,6 +415,13 @@ export class FilecoinProvider
       decimals: decimalsHex && decimalsHex !== '0x' ? Number(BigInt(decimalsHex)) : 18,
       totalSupply: totalSupplyHex && totalSupplyHex !== '0x' ? BigInt(totalSupplyHex).toString() : '0',
     }
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

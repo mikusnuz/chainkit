@@ -306,6 +306,19 @@ export class StacksProvider
   }
 
   /**
+   * Get the nonce for a Stacks address.
+   * Uses the /v2/accounts endpoint.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const account = await this.get<{ nonce: number }>(`/v2/accounts/${address}`)
+      return account.nonce
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees for a STX transfer.
    * Uses the /v2/fees/transfer endpoint.
    */
@@ -552,6 +565,13 @@ export class StacksProvider
       decimals,
       totalSupply,
     }
+  }
+
+  /**
+   * Get balances for multiple SIP-010 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

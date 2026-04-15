@@ -397,6 +397,27 @@ export class EosSigner implements ChainSigner {
   }
 
   /**
+   * Validate an EOS address.
+   * EOS "addresses" can be either public keys (EOS...) or account names (up to 12 chars).
+   */
+  validateAddress(address: string): boolean {
+    // EOS public key format
+    if (address.startsWith('EOS')) {
+      try {
+        eosFormatToPublicKey(address)
+        return true
+      } catch {
+        return false
+      }
+    }
+    // EOS account name: 1-12 chars from the set [.12345abcdefghijklmnopqrstuvwxyz]
+    if (/^[.1-5a-z]{1,12}[.1-5a-j]?$/.test(address) && address.length <= 13) {
+      return true
+    }
+    return false
+  }
+
+  /**
    * Sign an arbitrary message.
    * Computes SHA-256 of the message and signs with secp256k1.
    * Returns the signature in SIG_K1_ format.

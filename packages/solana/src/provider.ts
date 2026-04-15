@@ -167,6 +167,15 @@ export class SolanaProvider
   }
 
   /**
+   * Get the latest blockhash (Solana does not use a traditional nonce).
+   * Returns the latest blockhash which is needed for transaction construction.
+   */
+  async getNonce(address: Address): Promise<string> {
+    const result = await this.rpc.request<{ value: { blockhash: string } }>('getLatestBlockhash', [{ commitment: 'finalized' }])
+    return result.value.blockhash
+  }
+
+  /**
    * Estimate transaction fees on Solana.
    * Uses `getRecentPrioritizationFees` to estimate priority fees.
    */
@@ -418,6 +427,13 @@ export class SolanaProvider
       decimals: info.decimals,
       totalSupply: info.supply,
     }
+  }
+
+  /**
+   * Get balances for multiple SPL tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

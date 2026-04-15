@@ -199,6 +199,22 @@ export class AlgorandProvider
   }
 
   /**
+   * Get the next valid round for an Algorand address (used as nonce equivalent).
+   * Returns the account's minimum balance round or the current round.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const account = await algodRequest<{ round: number }>(
+        this.config,
+        `/v2/accounts/${address}`,
+      )
+      return account.round ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees on Algorand.
    * Uses GET /v2/transactions/params to get suggested fee.
    */
@@ -442,6 +458,13 @@ export class AlgorandProvider
       decimals: assetInfo.params.decimals,
       totalSupply: assetInfo.params.total.toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple ASA tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

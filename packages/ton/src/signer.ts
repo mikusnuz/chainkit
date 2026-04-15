@@ -521,6 +521,29 @@ export class TonSigner implements ChainSigner {
   }
 
   /**
+   * Validate a TON address.
+   * Supports raw format (workchain:hash, 64 hex chars) and user-friendly (base64url with CRC16).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (address.includes(':')) {
+        // Raw format: workchain:hexhash
+        const parts = address.split(':')
+        if (parts.length !== 2) return false
+        const workchain = parseInt(parts[0], 10)
+        if (isNaN(workchain)) return false
+        if (!/^[0-9a-fA-F]{64}$/.test(parts[1])) return false
+        return true
+      }
+      // User-friendly format: base64/base64url, 36 bytes decoded
+      parseUserFriendlyAddress(address)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte ED25519 signature as a hex string.
    */

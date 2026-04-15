@@ -198,6 +198,22 @@ export class NearSigner implements ChainSigner {
   }
 
   /**
+   * Validate a NEAR address.
+   * Supports implicit accounts (64 hex chars) and named accounts (*.near, *.testnet, etc.).
+   */
+  validateAddress(address: string): boolean {
+    // Implicit account: 64 hex characters
+    if (/^[0-9a-fA-F]{64}$/.test(address)) return true
+    // Named account: alphanumeric, dashes, dots, underscores; 2-64 chars
+    // Must end with a valid TLD like .near, .testnet, or be a top-level name
+    if (/^[a-z0-9][a-z0-9_\-]*(\.[a-z0-9][a-z0-9_\-]*)*$/.test(address) &&
+        address.length >= 2 && address.length <= 64) {
+      return true
+    }
+    return false
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

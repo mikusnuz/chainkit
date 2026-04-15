@@ -1,5 +1,44 @@
 import type { Address, Balance, HexString, TokenMetadata, Utxo, Unsubscribe, TransactionInfo } from './common.js'
 
+// ─── EIP-712 Typed Data Types ───
+
+/**
+ * Domain data for EIP-712 typed data signing.
+ */
+export interface TypedDataDomain {
+  name?: string
+  version?: string
+  chainId?: number
+  verifyingContract?: string
+  salt?: string
+}
+
+/**
+ * A single field descriptor in an EIP-712 struct type.
+ */
+export interface TypedDataField {
+  name: string
+  type: string
+}
+
+/**
+ * Capability for EVM signers that support EIP-712 typed data signing.
+ */
+export interface EvmSignerCapable {
+  /**
+   * Sign EIP-712 typed structured data.
+   * @param params - The typed data signing parameters
+   * @returns The 65-byte signature (r + s + v) as a hex string
+   */
+  signTypedData(params: {
+    privateKey: string
+    domain: TypedDataDomain
+    types: Record<string, TypedDataField[]>
+    primaryType: string
+    message: Record<string, unknown>
+  }): Promise<string>
+}
+
 /**
  * Capability for chains that support smart contracts.
  */
@@ -41,6 +80,14 @@ export interface TokenCapable {
    * @returns Token metadata
    */
   getTokenMetadata(tokenAddress: Address): Promise<TokenMetadata>
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   * @param address - The holder address
+   * @param tokenAddresses - Array of token contract addresses
+   * @returns Array of token balances
+   */
+  getMultipleTokenBalances?(address: Address, tokenAddresses: Address[]): Promise<Balance[]>
 }
 
 /**

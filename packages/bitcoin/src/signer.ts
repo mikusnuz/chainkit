@@ -382,6 +382,30 @@ export class BitcoinSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Bitcoin address.
+   * Supports bech32 (bc1/tb1) and legacy base58check (1/3/m/n) formats.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (address.startsWith('bc1') || address.startsWith('tb1')) {
+        const hrp = address.startsWith('bc1') ? 'bc' : 'tb'
+        const decoded = bech32.decodeUnsafe(address)
+        if (!decoded || decoded.prefix !== hrp) return false
+        const witnessProgram = bech32.fromWords(decoded.words.slice(1))
+        return witnessProgram.length === 20 || witnessProgram.length === 32
+      }
+      if (address.startsWith('1') || address.startsWith('3') ||
+          address.startsWith('m') || address.startsWith('n')) {
+        base58CheckDecode(address)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message using Bitcoin message signing.
    * Prepends the standard Bitcoin Signed Message prefix.
    */

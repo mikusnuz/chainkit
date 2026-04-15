@@ -55,6 +55,8 @@ export interface ProviderConfig {
   timeoutMs?: number
   /** Number of retries before giving up */
   retries?: number
+  /** Transport protocol for connecting to the endpoint */
+  transport?: 'http' | 'ws' | 'auto'
 }
 
 /**
@@ -91,6 +93,15 @@ export interface ChainProvider {
    * @returns Block information or null if not found
    */
   getBlock(hashOrNumber: string | number): Promise<BlockInfo | null>
+
+  /**
+   * Get the nonce or sequence number for an address.
+   * The meaning varies by chain: Ethereum uses transaction count,
+   * XRP uses account sequence, Cosmos uses account sequence, etc.
+   * @param address - The address to query
+   * @returns The nonce/sequence as a string or number
+   */
+  getNonce(address: Address): Promise<string | number>
 
   /**
    * Estimate transaction fees.

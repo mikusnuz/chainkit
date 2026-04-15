@@ -198,6 +198,18 @@ export class SolanaSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Solana address (base58-encoded, 32-byte public key).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      const decoded = base58.decode(address)
+      return decoded.length === 32
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

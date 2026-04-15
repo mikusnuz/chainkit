@@ -6,7 +6,7 @@ import {
   ChainKitError,
   ErrorCode,
 } from '@chainkit/core'
-import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
+import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams, EvmSignerCapable, TypedDataDomain, TypedDataField } from '@chainkit/core'
 import { keccak_256 } from '@noble/hashes/sha3'
 import { hmac } from '@noble/hashes/hmac'
 import { sha256 } from '@noble/hashes/sha256'
@@ -153,7 +153,7 @@ function numberToMinimalBytes(num: number): Uint8Array {
  * Supports BIP39/BIP32 key derivation, EIP-191 message signing,
  * and EIP-1559 (type 2) / legacy transaction signing.
  */
-export class KaiaSigner implements ChainSigner {
+export class KaiaSigner implements ChainSigner, EvmSignerCapable {
   /**
    * Generate a new BIP39 mnemonic phrase.
    */
@@ -346,6 +346,19 @@ export class KaiaSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Kaia address (same format as Ethereum: 0x + 40 hex chars).
+   */
+  validateAddress(address: string): boolean {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return false
+    const lower = address.slice(2).toLowerCase()
+    const upper = address.slice(2).toUpperCase()
+    if (address.slice(2) !== lower && address.slice(2) !== upper) {
+      return toChecksumAddress(address) === address
+    }
+    return true
+  }
+
+  /**
    * Sign an arbitrary message using EIP-191 personal_sign.
    * Prepends the standard Ethereum message prefix.
    */
@@ -372,6 +385,104 @@ export class KaiaSigner implements ChainSigner {
     const signature = secp256k1.sign(msgHash, pkBytes)
 
     // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+    const rHex = signature.r.toString(16).padStart(64, '0')
+    const sHex = signature.s.toString(16).padStart(64, '0')
+    const v = signature.recovery + 27
+
+    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+  }
+
+  /**
+   * Sign EIP-712 typed structured data (same as Ethereum).
+   */
+  async signTypedData(params: {
+    privateKey: string
+    domain: TypedDataDomain
+    types: Record<string, TypedDataField[]>
+    primaryType: string
+    message: Record<string, unknown>
+  }): Promise<string> {
+    const { privateKey, domain, types, primaryType, message } = params
+    const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+
+    const domainFields: TypedDataField[] = []
+    if (domain.name !== undefined) domainFields.push({ name: 'name', type: 'string' })
+    if (domain.version !== undefined) domainFields.push({ name: 'version', type: 'string' })
+    if (domain.chainId !== undefined) domainFields.push({ name: 'chainId', type: 'uint256' })
+    if (domain.verifyingContract !== undefined) domainFields.push({ name: 'verifyingContract', type: 'address' })
+    if (domain.salt !== undefined) domainFields.push({ name: 'salt', type: 'bytes32' })
+
+    const allTypes: Record<string, TypedDataField[]> = { ...types, EIP712Domain: domainFields }
+
+    const encodeType = (typeName: string): string => {
+      const fields = allTypes[typeName]
+      if (!fields) throw new ChainKitError(ErrorCode.INVALID_PARAMS, `Unknown type: ${typeName}`)
+      let result = `${typeName}(${fields.map((f) => `${f.type} ${f.name}`).join(',')})`
+      const refs = new Set<string>()
+      const collectRefs = (tName: string) => {
+        for (const field of allTypes[tName] || []) {
+          const baseType = field.type.replace(/\[\d*\]$/, '')
+          if (allTypes[baseType] && baseType !== typeName && !refs.has(baseType)) {
+            refs.add(baseType)
+            collectRefs(baseType)
+          }
+        }
+      }
+      collectRefs(typeName)
+      for (const ref of [...refs].sort()) {
+        const refFields = allTypes[ref]
+        result += `${ref}(${refFields.map((f) => `${f.type} ${f.name}`).join(',')})`
+      }
+      return result
+    }
+
+    const hashType = (typeName: string): Uint8Array => {
+      return keccak_256(new TextEncoder().encode(encodeType(typeName)))
+    }
+
+    const encodeValue = (type: string, value: unknown): Uint8Array => {
+      if (type === 'string') return keccak_256(new TextEncoder().encode(value as string))
+      if (type === 'bytes') return keccak_256(hexToBytes(stripHexPrefix(value as string)))
+      if (allTypes[type]) return encodeData(type, value as Record<string, unknown>)
+      if (type === 'address') return hexToBytes(stripHexPrefix(value as string).toLowerCase().padStart(64, '0'))
+      if (type === 'bool') return hexToBytes((value ? '1' : '0').padStart(64, '0'))
+      if (type.startsWith('uint') || type.startsWith('int')) {
+        const n = BigInt(value as string | number | bigint)
+        return hexToBytes((n >= 0n ? n : (1n << 256n) + n).toString(16).padStart(64, '0'))
+      }
+      if (type.startsWith('bytes')) return hexToBytes((stripHexPrefix(value as string)).padEnd(64, '0'))
+      return hexToBytes(BigInt(value as string | number).toString(16).padStart(64, '0'))
+    }
+
+    const encodeData = (typeName: string, data: Record<string, unknown>): Uint8Array => {
+      const fields = allTypes[typeName]
+      if (!fields) throw new ChainKitError(ErrorCode.INVALID_PARAMS, `Unknown type: ${typeName}`)
+      const parts: Uint8Array[] = [hashType(typeName)]
+      for (const field of fields) parts.push(encodeValue(field.type, data[field.name]))
+      const totalLen = parts.reduce((s, p) => s + p.length, 0)
+      const combined = new Uint8Array(totalLen)
+      let off = 0
+      for (const p of parts) { combined.set(p, off); off += p.length }
+      return keccak_256(combined)
+    }
+
+    const domainData: Record<string, unknown> = {}
+    if (domain.name !== undefined) domainData.name = domain.name
+    if (domain.version !== undefined) domainData.version = domain.version
+    if (domain.chainId !== undefined) domainData.chainId = domain.chainId
+    if (domain.verifyingContract !== undefined) domainData.verifyingContract = domain.verifyingContract
+    if (domain.salt !== undefined) domainData.salt = domain.salt
+    const domainSeparator = encodeData('EIP712Domain', domainData)
+    const structHash = encodeData(primaryType, message)
+
+    const finalPayload = new Uint8Array(2 + 32 + 32)
+    finalPayload[0] = 0x19
+    finalPayload[1] = 0x01
+    finalPayload.set(domainSeparator, 2)
+    finalPayload.set(structHash, 34)
+    const finalHash = keccak_256(finalPayload)
+
+    const signature = secp256k1.sign(finalHash, pkBytes)
     const rHex = signature.r.toString(16).padStart(64, '0')
     const sHex = signature.s.toString(16).padStart(64, '0')
     const v = signature.recovery + 27

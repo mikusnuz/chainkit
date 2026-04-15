@@ -206,6 +206,13 @@ export class SuiSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Sui address (0x prefix + 64 hex chars = 32 bytes).
+   */
+  validateAddress(address: string): boolean {
+    return /^0x[0-9a-fA-F]{64}$/.test(address)
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

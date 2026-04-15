@@ -189,6 +189,20 @@ export class XrpProvider
   }
 
   /**
+   * Get the account sequence number for an XRP address.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.rippledRequest<{
+        account_data: { Sequence: number }
+      }>('account_info', { account: address, ledger_index: 'current' })
+      return result.account_data.Sequence
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees using the rippled `fee` method.
    * Returns fees in drops.
    */
@@ -352,6 +366,13 @@ export class XrpProvider
       symbol: currency,
       decimals: 15,
     }
+  }
+
+  /**
+   * Get balances for multiple tokens (trust lines) in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

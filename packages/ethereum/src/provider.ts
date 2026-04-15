@@ -205,6 +205,14 @@ export class EthereumProvider
   }
 
   /**
+   * Get the transaction count (nonce) for an address.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.rpc.request<string>('eth_getTransactionCount', [address, 'latest'])
+    return hexToNumber(result)
+  }
+
+  /**
    * Estimate transaction fees using EIP-1559 parameters.
    */
   async estimateFee(): Promise<FeeEstimate> {
@@ -431,6 +439,13 @@ export class EthereumProvider
       decimals: hexToNumber(decimalsHex),
       totalSupply: hexToBigInt(totalSupplyHex).toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple ERC-20 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

@@ -35,6 +35,9 @@ export type {
   TokenCapable,
   SubscriptionCapable,
   UtxoCapable,
+  EvmSignerCapable,
+  TypedDataDomain,
+  TypedDataField,
 } from './capabilities.js'
 
 export { ChainKitError, ErrorCode } from './errors.js'

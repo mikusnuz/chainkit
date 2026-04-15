@@ -261,6 +261,27 @@ export class TonProvider
   }
 
   /**
+   * Get the wallet seqno (sequence number) for a TON address.
+   * Uses the runGetMethod endpoint to call the 'seqno' getter on the wallet contract.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.post<{ ok: boolean; result: { stack: Array<[string, string]> } }>('/runGetMethod', {
+        address,
+        method: 'seqno',
+        stack: [],
+      })
+      if (result.ok && result.result.stack.length > 0) {
+        const [, value] = result.result.stack[0]
+        return parseInt(value, 16) || parseInt(value, 10) || 0
+      }
+      return 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees.
    * Uses the TON estimateFee endpoint.
    */
@@ -481,6 +502,13 @@ export class TonProvider
       decimals: 9,
       totalSupply: supply,
     }
+  }
+
+  /**
+   * Get balances for multiple Jetton tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

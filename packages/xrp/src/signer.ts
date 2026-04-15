@@ -479,6 +479,20 @@ export class XrpSigner implements ChainSigner {
   }
 
   /**
+   * Validate an XRP address (base58check with XRP alphabet, starts with 'r').
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('r')) return false
+      const decoded = xrpBase58CheckDecode(address)
+      // First byte is type prefix (0x00), remaining 20 bytes are account ID
+      return decoded.length === 21 && decoded[0] === 0x00
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message.
    * XRP does not have a standardized message signing format like Ethereum's EIP-191,
    * so we use a simple SHA-256 double hash of the message and sign with secp256k1.

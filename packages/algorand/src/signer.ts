@@ -252,6 +252,20 @@ export class AlgorandSigner implements ChainSigner {
   }
 
   /**
+   * Validate an Algorand address.
+   * Base32 encoded, 58 chars, with SHA-512/256 checksum verification.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (address.length !== 58) return false
+      decodeAlgorandAddress(address)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

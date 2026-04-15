@@ -324,6 +324,19 @@ export class EosProvider
   }
 
   /**
+   * Get the head block number as a sequence proxy for EOS (EOS has no per-account nonce).
+   * Returns the head block number from chain info.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const account = await this.client.post<{ head_block_num?: number }>('/v1/chain/get_account', { account_name: address })
+      return account.head_block_num ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate resource costs.
    * EOS does not have traditional gas fees; it uses CPU/NET/RAM resources.
    * Returns resource price estimates.
@@ -531,6 +544,13 @@ export class EosProvider
       decimals: parsed.decimals,
       totalSupply: parsed.amount,
     }
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

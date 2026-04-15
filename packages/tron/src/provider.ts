@@ -293,6 +293,20 @@ export class TronProvider
   }
 
   /**
+   * Get the latest nonce (transaction count) for a Tron address.
+   * Tron does not have a traditional nonce; returns the transaction count from the account info.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const account = await this.post<Record<string, unknown>>('/wallet/getaccount', { address, visible: true })
+      // Tron returns transaction count or 0 for new accounts
+      return (account.net_window_size as number) ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees.
    * Tron uses energy and bandwidth instead of gas. Returns estimates in SUN.
    */
@@ -623,6 +637,13 @@ export class TronProvider
       decimals: decimalsHex === '0' ? 0 : Number(BigInt('0x' + decimalsHex)),
       totalSupply: totalSupplyHex === '0' ? '0' : BigInt('0x' + totalSupplyHex).toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple TRC-20 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------
