@@ -275,6 +275,26 @@ export class HederaProvider
   }
 
   /**
+   * Get the nonce for an account.
+   * Hedera does not use sequential nonces in the same way as Ethereum.
+   * Returns the number of transactions for the account as a proxy.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.get<{
+        transactions: Array<{ nonce: number }>
+      }>(`/api/v1/transactions?account.id=${address}&limit=1&order=desc`)
+
+      if (result.transactions && result.transactions.length > 0) {
+        return result.transactions[0].nonce ?? 0
+      }
+    } catch {
+      // Fall through
+    }
+    return 0
+  }
+
+  /**
    * Estimate transaction fees on Hedera.
    * Hedera has deterministic fees; we return typical fee ranges.
    */
@@ -497,6 +517,13 @@ export class HederaProvider
       decimals: parseInt(token.decimals, 10),
       totalSupply: token.total_supply,
     }
+  }
+
+  /**
+   * Get balances for multiple HTS tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

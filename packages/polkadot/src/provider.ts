@@ -374,6 +374,15 @@ export class PolkadotProvider
   }
 
   /**
+   * Get the nonce (account index) for an address.
+   * Uses system_accountNextIndex RPC.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.rpc.request<number>('system_accountNextIndex', [address])
+    return result
+  }
+
+  /**
    * Estimate transaction fees using payment_queryInfo RPC.
    * Since this requires a specific extrinsic, we return default estimates.
    */
@@ -607,6 +616,13 @@ export class PolkadotProvider
       ErrorCode.INVALID_ADDRESS,
       `Asset not found: ${tokenAddress}`,
     )
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

@@ -207,6 +207,22 @@ export class HederaSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Hedera address.
+   * Accepts both account ID format (0.0.XXXXX) and 64-char hex public key alias.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      // Account ID format: 0.0.XXXXX
+      if (/^\d+\.\d+\.\d+$/.test(address)) return true
+      // Hex public key alias (64 hex chars)
+      if (/^[0-9a-fA-F]{64}$/.test(address)) return true
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

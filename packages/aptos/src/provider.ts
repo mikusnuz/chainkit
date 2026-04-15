@@ -227,6 +227,18 @@ export class AptosProvider
   }
 
   /**
+   * Get the sequence number (nonce) for an account.
+   * Uses GET /v1/accounts/{address} to read the sequence_number field.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const account = await aptosRequest<{ sequence_number: string }>(
+      this.baseUrl,
+      `/v1/accounts/${address}`,
+    )
+    return Number(account.sequence_number)
+  }
+
+  /**
    * Estimate transaction fees.
    * Uses the gas estimation endpoint.
    */
@@ -472,6 +484,13 @@ export class AptosProvider
       decimals: coinInfo.data.decimals,
       totalSupply,
     }
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

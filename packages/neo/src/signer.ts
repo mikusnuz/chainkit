@@ -642,6 +642,21 @@ export class NeoSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Neo N3 address.
+   * Neo3 addresses are base58check-encoded with version byte 0x35,
+   * starting with 'N' and 34 characters long.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('N') || address.length !== 34) return false
+      const decoded = b58check.decode(address)
+      return decoded.length === 21 && decoded[0] === NEO3_ADDRESS_VERSION
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with P-256.
    * Uses SHA-256 hash of the message before signing.
    * Returns the signature as r (32 bytes) + s (32 bytes) = 64 bytes hex.

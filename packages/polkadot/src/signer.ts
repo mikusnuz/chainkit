@@ -656,6 +656,19 @@ export class PolkadotSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Polkadot SS58 address.
+   * Decodes base58, checks length (35 bytes) and verifies blake2b checksum.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      decodeSS58(address)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

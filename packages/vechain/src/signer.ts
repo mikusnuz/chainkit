@@ -327,6 +327,21 @@ export class VeChainSigner implements ChainSigner {
   }
 
   /**
+   * Validate a VeChain address.
+   * VeChain uses the same address format as Ethereum: 0x + 40 hex characters.
+   */
+  validateAddress(address: string): boolean {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return false
+    // If mixed case, verify EIP-55 checksum
+    const lower = address.slice(2).toLowerCase()
+    const upper = address.slice(2).toUpperCase()
+    if (address.slice(2) !== lower && address.slice(2) !== upper) {
+      return toChecksumAddress(address) === address
+    }
+    return true
+  }
+
+  /**
    * Sign an arbitrary message.
    * VeChain uses a similar prefix to Ethereum for personal signing.
    */

@@ -571,6 +571,21 @@ export class IotaSigner implements ChainSigner {
   }
 
   /**
+   * Validate an IOTA bech32 address.
+   * IOTA addresses use bech32 encoding with the 'iota' human-readable prefix.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('iota1')) return false
+      const decoded = bech32.decodeToBytes(address)
+      // Should decode to 33 bytes: 1 type byte + 32 hash bytes
+      return decoded.bytes.length === 33
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

@@ -182,6 +182,22 @@ export class IconProvider
   }
 
   /**
+   * Get the transaction count (nonce) for an address.
+   * Uses icx_getTransactionCount to retrieve the count.
+   */
+  async getNonce(address: Address): Promise<number> {
+    try {
+      const result = await this.rpc.request<string>(
+        'icx_getTransactionCount',
+        { address, tag: 'latest' } as unknown as unknown[],
+      )
+      return hexToNumber(result)
+    } catch {
+      return 0
+    }
+  }
+
+  /**
    * Estimate transaction fees.
    * ICON uses step (gas) with a step price. Returns in ICX.
    */
@@ -423,6 +439,13 @@ export class IconProvider
       decimals: hexToNumber(decimalsResult),
       totalSupply: hexToBigInt(totalSupplyResult).toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple IRC-2 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

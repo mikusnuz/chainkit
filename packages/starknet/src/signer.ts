@@ -202,6 +202,21 @@ export class StarknetSigner implements ChainSigner {
   }
 
   /**
+   * Validate a StarkNet address.
+   * StarkNet addresses are 0x-prefixed hex strings of up to 64 characters (32 bytes).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('0x')) return false
+      const hex = address.slice(2)
+      if (hex.length === 0 || hex.length > 64) return false
+      return /^[0-9a-fA-F]+$/.test(hex)
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message using Stark ECDSA.
    *
    * The message is hashed with SHA-256 before signing (since the Stark curve

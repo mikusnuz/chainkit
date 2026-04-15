@@ -273,6 +273,17 @@ export class TezosProvider
   }
 
   /**
+   * Get the counter (nonce) for an address.
+   * Uses the Tezos RPC /chains/main/blocks/head/context/contracts/{addr}/counter endpoint.
+   */
+  async getNonce(address: Address): Promise<string> {
+    const counter = await this.rpc<string>(
+      `/chains/main/blocks/head/context/contracts/${address}/counter`,
+    )
+    return typeof counter === 'string' ? counter.replace(/"/g, '') : String(counter)
+  }
+
+  /**
    * Estimate transaction fees on Tezos.
    * Tezos fees are calculated based on gas and storage usage.
    * Returns estimates in mutez.
@@ -542,6 +553,13 @@ export class TezosProvider
       symbol: '',
       decimals: 0,
     }
+  }
+
+  /**
+   * Get balances for multiple FA tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

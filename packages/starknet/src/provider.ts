@@ -266,6 +266,18 @@ export class StarknetProvider
   }
 
   /**
+   * Get the nonce for a StarkNet account contract.
+   * Uses starknet_getNonce RPC method.
+   */
+  async getNonce(address: Address): Promise<string> {
+    const result = await this.rpc.request<string>('starknet_getNonce', [
+      'latest',
+      padAddress(address),
+    ])
+    return result
+  }
+
+  /**
    * Estimate transaction fees.
    *
    * Queries the latest block for gas price information.
@@ -602,6 +614,13 @@ export class StarknetProvider
     } catch {
       return { name: 'Unknown', symbol: 'UNKNOWN', decimals: 0 }
     }
+  }
+
+  /**
+   * Get balances for multiple ERC-20 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

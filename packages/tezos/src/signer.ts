@@ -561,6 +561,38 @@ export class TezosSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Tezos address.
+   * Accepts tz1, tz2, tz3 (implicit) and KT1 (contract) addresses.
+   * Validates base58check encoding and prefix.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (address.startsWith('tz1')) {
+        b58cDecodeWithPrefix(address, TZ1_PREFIX)
+        return true
+      }
+      if (address.startsWith('tz2')) {
+        const TZ2_PREFIX = new Uint8Array([0x06, 0xa1, 0xa1])
+        b58cDecodeWithPrefix(address, TZ2_PREFIX)
+        return true
+      }
+      if (address.startsWith('tz3')) {
+        const TZ3_PREFIX = new Uint8Array([0x06, 0xa1, 0xa4])
+        b58cDecodeWithPrefix(address, TZ3_PREFIX)
+        return true
+      }
+      if (address.startsWith('KT1')) {
+        const KT1_PREFIX = new Uint8Array([0x02, 0x5a, 0x79])
+        b58cDecodeWithPrefix(address, KT1_PREFIX)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * The message is hashed with blake2b-256 before signing (Tezos convention).
    * Returns the 64-byte signature as a hex string.

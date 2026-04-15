@@ -449,6 +449,21 @@ export class CardanoSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Cardano address.
+   * Accepts bech32-encoded Shelley addresses starting with 'addr1' or 'addr_test1'.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('addr1') && !address.startsWith('addr_test1')) return false
+      const decoded = bech32.decode(address as `${string}1${string}`, 1023)
+      const bytes = bech32.fromWords(decoded.words)
+      return bytes.length > 0
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

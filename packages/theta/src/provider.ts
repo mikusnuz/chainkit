@@ -239,6 +239,15 @@ export class ThetaProvider
   }
 
   /**
+   * Get the transaction count (nonce) for an address.
+   * Uses eth_getTransactionCount since Theta is EVM-compatible.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.rpc.request<string>('eth_getTransactionCount', [address, 'latest'])
+    return hexToNumber(result)
+  }
+
+  /**
    * Estimate transaction fees.
    * Theta has a fixed minimum TFUEL fee for transactions.
    */
@@ -475,6 +484,13 @@ export class ThetaProvider
       decimals: hexToNumber(decimalsHex),
       totalSupply: hexToBigInt(totalSupplyHex).toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple TNT-20 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

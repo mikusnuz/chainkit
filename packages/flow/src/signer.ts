@@ -301,6 +301,21 @@ export class FlowSigner implements ChainSigner {
   }
 
   /**
+   * Validate a Flow address.
+   * Flow addresses are 0x-prefixed 16-character hex strings (8 bytes).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('0x')) return false
+      const hex = address.slice(2)
+      if (hex.length !== 16) return false
+      return /^[0-9a-fA-F]{16}$/.test(hex)
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ECDSA P-256.
    * The message is SHA-256 hashed before signing.
    * Returns the signature as r (32 bytes) + s (32 bytes) hex string.

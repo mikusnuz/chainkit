@@ -292,6 +292,15 @@ export class IotaProvider implements ChainProvider, TokenCapable, SubscriptionCa
   }
 
   /**
+   * Get the nonce for an address.
+   * IOTA uses a UTXO model and does not have sequential nonces.
+   * Always returns 0.
+   */
+  async getNonce(_address: Address): Promise<number> {
+    return 0
+  }
+
+  /**
    * Estimate transaction fees.
    * IOTA is feeless (uses Proof of Work), so fees are always 0.
    */
@@ -444,6 +453,13 @@ export class IotaProvider implements ChainProvider, TokenCapable, SubscriptionCa
         `Token (foundry) not found: ${tokenAddress}`,
       )
     }
+  }
+
+  /**
+   * Get balances for multiple tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

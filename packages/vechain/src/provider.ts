@@ -331,6 +331,15 @@ export class VeChainProvider
   }
 
   /**
+   * Get the nonce for an address.
+   * VeChain uses random nonces (not sequential), so this always returns 0.
+   * Transactions use randomly generated nonces instead of sequential counters.
+   */
+  async getNonce(_address: Address): Promise<number> {
+    return 0
+  }
+
+  /**
    * Estimate transaction fees.
    * VeChain uses a different fee model with VTHO as gas token.
    * Base gas price is fixed; gasPriceCoef adjusts it (0-255).
@@ -577,6 +586,13 @@ export class VeChainProvider
       decimals: Number(hexToBigInt(decimalsResult[0]?.data ?? '0x12')),
       totalSupply: hexToBigInt(totalSupplyResult[0]?.data ?? '0x0').toString(),
     }
+  }
+
+  /**
+   * Get balances for multiple VIP-180 tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------

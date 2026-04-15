@@ -205,6 +205,21 @@ export class AptosSigner implements ChainSigner {
   }
 
   /**
+   * Validate an Aptos address.
+   * Aptos addresses are 0x-prefixed 64-character hex strings (32 bytes).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('0x')) return false
+      const hex = address.slice(2)
+      if (hex.length !== 64) return false
+      return /^[0-9a-fA-F]{64}$/.test(hex)
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

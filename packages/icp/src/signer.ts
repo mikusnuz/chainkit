@@ -373,6 +373,19 @@ export class IcpSigner implements ChainSigner {
   }
 
   /**
+   * Validate an ICP account identifier.
+   * ICP account identifiers are 64-character hex strings (32 bytes).
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (address.length !== 64) return false
+      return /^[0-9a-fA-F]{64}$/.test(address)
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

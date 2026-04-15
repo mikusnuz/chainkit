@@ -255,6 +255,21 @@ export class MultiversXSigner implements ChainSigner {
   }
 
   /**
+   * Validate a MultiversX bech32 address.
+   * MultiversX addresses use bech32 encoding with the 'erd1' prefix
+   * and decode to exactly 32 bytes.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!address.startsWith('erd1')) return false
+      bech32ToPubkey(address)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message with ED25519.
    * Returns the 64-byte signature as a hex string.
    */

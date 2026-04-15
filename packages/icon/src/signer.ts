@@ -221,6 +221,19 @@ export class IconSigner implements ChainSigner {
   }
 
   /**
+   * Validate an ICON address.
+   * ICON addresses use 'hx' prefix followed by 40 hex characters.
+   */
+  validateAddress(address: string): boolean {
+    try {
+      if (!/^hx[0-9a-fA-F]{40}$/.test(address)) return false
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Sign an arbitrary message.
    * Hashes the message with keccak256 and signs with secp256k1.
    */

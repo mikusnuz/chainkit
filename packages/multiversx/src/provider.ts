@@ -252,6 +252,15 @@ export class MultiversXProvider
   }
 
   /**
+   * Get the nonce for an account.
+   * Uses GET /accounts/{address} to read the nonce field.
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.get<{ nonce: number }>(`/accounts/${address}`)
+    return result.nonce
+  }
+
+  /**
    * Estimate transaction fees on MultiversX.
    * Uses GET /network/config for gas settings.
    */
@@ -481,6 +490,13 @@ export class MultiversXProvider
       decimals: result.decimals,
       totalSupply: result.supply ?? result.initialMinted,
     }
+  }
+
+  /**
+   * Get balances for multiple ESDT tokens in parallel.
+   */
+  async getMultipleTokenBalances(address: Address, tokenAddresses: Address[]): Promise<Balance[]> {
+    return Promise.all(tokenAddresses.map(t => this.getTokenBalance(address, t)))
   }
 
   // ------- SubscriptionCapable -------
