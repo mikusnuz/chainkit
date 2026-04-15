@@ -216,6 +216,21 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/multiversx:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/near:
     dependencies:
       '@chainkit/core':
@@ -336,6 +351,33 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/tezos:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/theta:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
+
   packages/ton:
     dependencies:
       '@chainkit/core':
@@ -365,6 +407,18 @@ importers:
       '@scure/base':
         specifier: ^1.2.0
         version: 1.2.6
+
+  packages/vechain:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
 
   packages/xrp:
     dependencies:
