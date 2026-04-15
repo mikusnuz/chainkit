@@ -21,6 +21,18 @@ import { eos } from '@chainkit/eos'
 import { nostr } from '@chainkit/nostr'
 import { cardano } from '@chainkit/cardano'
 import { polkadot } from '@chainkit/polkadot'
+import { hedera } from '@chainkit/hedera'
+import { filecoin } from '@chainkit/filecoin'
+import { icp } from '@chainkit/icp'
+import { algorand } from '@chainkit/algorand'
+import { vechain } from '@chainkit/vechain'
+import { tezos } from '@chainkit/tezos'
+import { theta } from '@chainkit/theta'
+import { multiversx } from '@chainkit/multiversx'
+import { iota } from '@chainkit/iota'
+import { neo } from '@chainkit/neo'
+import { flow } from '@chainkit/flow'
+import { icon } from '@chainkit/icon'
 import type { RpcManagerConfig } from '@chainkit/core'
 
 type SignerConstructor = new () => { derivePrivateKey: (mnemonic: string, path: string) => Promise<string>; getAddress: (pk: string) => string }
@@ -51,6 +63,18 @@ const CHAIN_MODULES: Record<ChainId, { Signer: SignerConstructor; Provider: Prov
   nostr: nostr as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   cardano: cardano as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   polkadot: polkadot as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  hedera: hedera as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  filecoin: filecoin as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  icp: icp as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  algorand: algorand as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  vechain: vechain as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  tezos: tezos as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  theta: theta as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  multiversx: multiversx as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  iota: iota as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  neo: neo as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  flow: flow as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  icon: icon as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
 }
 
 export interface WalletState {

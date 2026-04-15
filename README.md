@@ -1,6 +1,6 @@
 # ChainKit
 
-Cross-chain abstraction SDK providing a unified API for 19 blockchains. One interface for wallet creation, transaction signing, balance queries, and token operations across all supported chains.
+Cross-chain abstraction SDK providing a unified API for 31 blockchains. One interface for wallet creation, transaction signing, balance queries, and token operations across all supported chains.
 
 ## Installation
 
@@ -71,10 +71,22 @@ await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
 | `@chainkit/eos` | EOS / Vaulta |
 | `@chainkit/nostr` | Nostr Assets |
 | `@chainkit/polkadot` | Polkadot + Substrate parachains |
+| `@chainkit/hedera` | Hedera |
+| `@chainkit/filecoin` | Filecoin |
+| `@chainkit/icp` | Internet Computer |
+| `@chainkit/algorand` | Algorand |
+| `@chainkit/vechain` | VeChain |
+| `@chainkit/tezos` | Tezos |
+| `@chainkit/theta` | Theta |
+| `@chainkit/multiversx` | MultiversX |
+| `@chainkit/iota` | IOTA |
+| `@chainkit/neo` | Neo |
+| `@chainkit/flow` | Flow |
+| `@chainkit/icon` | Icon |
 
 ## Supported Chains & Exchange Coverage
 
-ChainKit covers **212/246 coins on Upbit KRW market (86%)** and **390/438 coins on Binance USDT spot (89%)**.
+ChainKit covers **~230/246 coins on Upbit KRW market (~93.5%)** and **~420/438 coins on Binance USDT spot (~95.9%)**.
 
 Below is the full breakdown of which coins each package supports.
 
@@ -498,13 +510,162 @@ Nostr is a relay protocol, not a blockchain. No tradeable tokens on exchanges.
 
 ---
 
+### @chainkit/hedera (ED25519)
+
+**Native:** HBAR
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| HBAR | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/filecoin (Secp256k1)
+
+**Native:** FIL
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| FIL | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/icp (ED25519)
+
+**Native:** ICP
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| ICP | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/algorand (ED25519)
+
+**Native:** ALGO
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| ALGO | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/vechain (Secp256k1)
+
+**Native:** VET
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| VET | - | O |
+| VTHO | - | O |
+
+**Estimated total: ~2 coins**
+
+---
+
+### @chainkit/tezos (ED25519)
+
+**Native:** XTZ
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| XTZ | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/theta (Secp256k1)
+
+**Native:** THETA
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| THETA | O | O |
+| TFUEL | O | O |
+
+**Estimated total: ~2 coins**
+
+---
+
+### @chainkit/multiversx (ED25519)
+
+**Native:** EGLD
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| EGLD | - | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/iota (ED25519)
+
+**Native:** IOTA
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| IOTA | - | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/neo (Secp256r1)
+
+**Native:** NEO
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| NEO | - | O |
+| GAS | - | O |
+
+**Estimated total: ~2 coins**
+
+---
+
+### @chainkit/flow (ECDSA_P256)
+
+**Native:** FLOW
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| FLOW | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
+### @chainkit/icon (Secp256k1)
+
+**Native:** ICX
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| ICX | O | O |
+
+**Estimated total: ~1 coin**
+
+---
+
 ## Signature Algorithm Categories
 
 | Category | Curve | Chains |
 |----------|-------|--------|
-| **Secp256k1** | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, Kaspa, EOS, Nostr |
-| **ED25519** | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar |
+| **Secp256k1** | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, Kaspa, EOS, Nostr, Filecoin, VeChain, Theta, Icon |
+| **ED25519** | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar, Hedera, ICP, Algorand, Tezos, MultiversX, IOTA |
 | **SR25519** | Schnorrkel/Ristretto | Polkadot |
+| **Secp256r1** | NIST P-256 ECDSA | Neo |
+| **ECDSA_P256** | ECDSA P-256 | Flow |
 | **STARK** | Stark curve | StarkNet |
 
 ## Architecture

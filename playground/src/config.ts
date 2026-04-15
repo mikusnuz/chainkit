@@ -18,8 +18,20 @@ export type ChainId =
   | 'eos'
   | 'nostr'
   | 'polkadot'
+  | 'hedera'
+  | 'filecoin'
+  | 'icp'
+  | 'algorand'
+  | 'vechain'
+  | 'tezos'
+  | 'theta'
+  | 'multiversx'
+  | 'iota'
+  | 'neo'
+  | 'flow'
+  | 'icon'
 
-export type ChainGroup = 'Secp256k1' | 'ED25519' | 'SR25519' | 'STARK'
+export type ChainGroup = 'Secp256k1' | 'ED25519' | 'SR25519' | 'Secp256r1' | 'ECDSA_P256' | 'STARK'
 
 export interface ChainConfig {
   name: string
@@ -203,12 +215,122 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
     explorer: 'https://sepolia.starkscan.co',
     group: 'STARK',
   },
+  hedera: {
+    name: 'Hedera',
+    hdPath: "m/44'/3030'/0'/0'/0'",
+    testnetRpc: 'https://testnet.mirrornode.hedera.com',
+    decimals: 8,
+    symbol: 'HBAR',
+    explorer: 'https://hashscan.io/testnet',
+    group: 'ED25519',
+  },
+  filecoin: {
+    name: 'Filecoin',
+    hdPath: "m/44'/461'/0'/0/0",
+    testnetRpc: 'https://api.calibration.node.glif.io/rpc/v1',
+    decimals: 18,
+    symbol: 'FIL',
+    explorer: 'https://calibration.filfox.info',
+    group: 'Secp256k1',
+  },
+  icp: {
+    name: 'ICP',
+    hdPath: "m/44'/223'/0'/0'/0'",
+    testnetRpc: 'https://rosetta-api.internetcomputer.org',
+    decimals: 8,
+    symbol: 'ICP',
+    explorer: 'https://dashboard.internetcomputer.org',
+    group: 'ED25519',
+  },
+  algorand: {
+    name: 'Algorand',
+    hdPath: "m/44'/283'/0'/0'/0'",
+    testnetRpc: 'https://testnet-api.algonode.cloud',
+    decimals: 6,
+    symbol: 'ALGO',
+    explorer: 'https://testnet.explorer.perawallet.app',
+    group: 'ED25519',
+  },
+  vechain: {
+    name: 'VeChain',
+    hdPath: "m/44'/818'/0'/0/0",
+    testnetRpc: 'https://testnet.veblocks.net',
+    decimals: 18,
+    symbol: 'VET',
+    explorer: 'https://explore-testnet.vechain.org',
+    group: 'Secp256k1',
+  },
+  tezos: {
+    name: 'Tezos',
+    hdPath: "m/44'/1729'/0'/0'",
+    testnetRpc: 'https://ghostnet.tezos.marigold.dev',
+    decimals: 6,
+    symbol: 'XTZ',
+    explorer: 'https://ghostnet.tzkt.io',
+    group: 'ED25519',
+  },
+  theta: {
+    name: 'Theta',
+    hdPath: "m/44'/500'/0'/0/0",
+    testnetRpc: 'https://eth-rpc-api-testnet.thetatoken.org/rpc',
+    decimals: 18,
+    symbol: 'THETA',
+    explorer: 'https://testnet-explorer.thetatoken.org',
+    group: 'Secp256k1',
+  },
+  multiversx: {
+    name: 'MultiversX',
+    hdPath: "m/44'/508'/0'/0'/0'",
+    testnetRpc: 'https://testnet-api.multiversx.com',
+    decimals: 18,
+    symbol: 'EGLD',
+    explorer: 'https://testnet-explorer.multiversx.com',
+    group: 'ED25519',
+  },
+  iota: {
+    name: 'IOTA',
+    hdPath: "m/44'/4218'/0'/0'/0'",
+    testnetRpc: 'https://api.testnet.shimmer.network',
+    decimals: 6,
+    symbol: 'IOTA',
+    explorer: 'https://explorer.shimmer.network/testnet',
+    group: 'ED25519',
+  },
+  neo: {
+    name: 'Neo',
+    hdPath: "m/44'/888'/0'/0/0",
+    testnetRpc: 'https://testnet1.neo.coz.io:443',
+    decimals: 0,
+    symbol: 'NEO',
+    explorer: 'https://testnet.neotube.io',
+    group: 'Secp256r1',
+  },
+  flow: {
+    name: 'Flow',
+    hdPath: "m/44'/539'/0'/0/0",
+    testnetRpc: 'https://rest-testnet.onflow.org',
+    decimals: 8,
+    symbol: 'FLOW',
+    explorer: 'https://testnet.flowdiver.io',
+    group: 'ECDSA_P256',
+  },
+  icon: {
+    name: 'Icon',
+    hdPath: "m/44'/74'/0'/0/0",
+    testnetRpc: 'https://lisbon.net.solidwallet.io/api/v3',
+    decimals: 18,
+    symbol: 'ICX',
+    explorer: 'https://lisbon.tracker.solidwallet.io',
+    group: 'Secp256k1',
+  },
 }
 
 export const CHAIN_GROUPS: Record<ChainGroup, ChainId[]> = {
-  Secp256k1: ['ethereum', 'bitcoin', 'tron', 'cosmos', 'xrp', 'stacks', 'kaia', 'kaspa', 'eos', 'nostr'],
-  ED25519: ['solana', 'ton', 'aptos', 'sui', 'near', 'cardano', 'stellar'],
+  Secp256k1: ['ethereum', 'bitcoin', 'tron', 'cosmos', 'xrp', 'stacks', 'kaia', 'kaspa', 'eos', 'nostr', 'filecoin', 'vechain', 'theta', 'icon'],
+  ED25519: ['solana', 'ton', 'aptos', 'sui', 'near', 'cardano', 'stellar', 'hedera', 'icp', 'algorand', 'tezos', 'multiversx', 'iota'],
   SR25519: ['polkadot'],
+  Secp256r1: ['neo'],
+  ECDSA_P256: ['flow'],
   STARK: ['starknet'],
 }
 

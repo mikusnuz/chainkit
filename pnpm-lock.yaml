@@ -494,6 +494,9 @@ importers:
 
   playground:
     dependencies:
+      '@chainkit/algorand':
+        specifier: workspace:*
+        version: link:../packages/algorand
       '@chainkit/aptos':
         specifier: workspace:*
         version: link:../packages/aptos
@@ -518,15 +521,39 @@ importers:
       '@chainkit/ethereum':
         specifier: workspace:*
         version: link:../packages/ethereum
+      '@chainkit/filecoin':
+        specifier: workspace:*
+        version: link:../packages/filecoin
+      '@chainkit/flow':
+        specifier: workspace:*
+        version: link:../packages/flow
+      '@chainkit/hedera':
+        specifier: workspace:*
+        version: link:../packages/hedera
+      '@chainkit/icon':
+        specifier: workspace:*
+        version: link:../packages/icon
+      '@chainkit/icp':
+        specifier: workspace:*
+        version: link:../packages/icp
+      '@chainkit/iota':
+        specifier: workspace:*
+        version: link:../packages/iota
       '@chainkit/kaia':
         specifier: workspace:*
         version: link:../packages/kaia
       '@chainkit/kaspa':
         specifier: workspace:*
         version: link:../packages/kaspa
+      '@chainkit/multiversx':
+        specifier: workspace:*
+        version: link:../packages/multiversx
       '@chainkit/near':
         specifier: workspace:*
         version: link:../packages/near
+      '@chainkit/neo':
+        specifier: workspace:*
+        version: link:../packages/neo
       '@chainkit/nostr':
         specifier: workspace:*
         version: link:../packages/nostr
@@ -548,12 +575,21 @@ importers:
       '@chainkit/sui':
         specifier: workspace:*
         version: link:../packages/sui
+      '@chainkit/tezos':
+        specifier: workspace:*
+        version: link:../packages/tezos
+      '@chainkit/theta':
+        specifier: workspace:*
+        version: link:../packages/theta
       '@chainkit/ton':
         specifier: workspace:*
         version: link:../packages/ton
       '@chainkit/tron':
         specifier: workspace:*
         version: link:../packages/tron
+      '@chainkit/vechain':
+        specifier: workspace:*
+        version: link:../packages/vechain
       '@chainkit/xrp':
         specifier: workspace:*
         version: link:../packages/xrp
