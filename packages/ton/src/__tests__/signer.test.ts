@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TonSigner } from '../signer.js'
-import { Cell } from '@ton/core'
+import { Cell } from '../boc.js'
 
 // Known test mnemonic (DO NOT use in production)
 const TEST_MNEMONIC =
@@ -175,7 +175,7 @@ describe('TonSigner', () => {
       expect(signed.length).toBeGreaterThan(0)
 
       // Should be valid base64 that can be parsed as BOC
-      const bocBuffer = Buffer.from(signed, 'base64')
+      const bocBuffer = Uint8Array.from(atob(signed), (c) => c.charCodeAt(0))
       const cells = Cell.fromBoc(bocBuffer)
       expect(cells.length).toBe(1)
     })
@@ -194,13 +194,13 @@ describe('TonSigner', () => {
       )
 
       // Parse as BOC
-      const bocBuffer = Buffer.from(signed, 'base64')
+      const bocBuffer = Uint8Array.from(atob(signed), (c) => c.charCodeAt(0))
       const cells = Cell.fromBoc(bocBuffer)
       expect(cells.length).toBe(1)
 
       // The root cell should be an external message
       const rootCell = cells[0]
-      expect(rootCell.bits.length).toBeGreaterThan(0)
+      expect(rootCell.bitLength).toBeGreaterThan(0)
     })
 
     it('should include StateInit when seqno is 0', async () => {
@@ -226,8 +226,8 @@ describe('TonSigner', () => {
       )
 
       // BOC with StateInit should be larger (contains code + data)
-      const bufferWithInit = Buffer.from(withInit, 'base64')
-      const bufferWithoutInit = Buffer.from(withoutInit, 'base64')
+      const bufferWithInit = Uint8Array.from(atob(withInit), (c) => c.charCodeAt(0))
+      const bufferWithoutInit = Uint8Array.from(atob(withoutInit), (c) => c.charCodeAt(0))
       expect(bufferWithInit.length).toBeGreaterThan(bufferWithoutInit.length)
     })
 

@@ -11,18 +11,7 @@ import * as ed25519 from '@noble/ed25519'
 import { sha512 } from '@noble/hashes/sha512'
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
-import {
-  Address as TonAddress,
-  beginCell,
-  Cell,
-  contractAddress as computeContractAddress,
-  internal,
-  external,
-  storeMessage,
-  storeMessageRelaxed,
-  toNano,
-} from '@ton/core'
-import type { StateInit, MessageRelaxed } from '@ton/core'
+import { Cell, beginCell } from './boc.js'
 
 // ed25519 requires sha512 to be set
 ed25519.etc.sha512Sync = (...m: Uint8Array[]) => {
@@ -73,6 +62,20 @@ function toBase64url(data: Uint8Array): string {
 }
 
 /**
+ * Decode base64 (standard or url-safe) to Uint8Array.
+ */
+function fromBase64(str: string): Uint8Array {
+  // Normalize base64url to standard base64
+  const std = str.replace(/-/g, '+').replace(/_/g, '/')
+  const binary = atob(std)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+/**
  * Convert a raw address (workchain:hash) to user-friendly base64url format.
  * Format: [flags(1)][workchain(1)][hash(32)][crc16(2)] = 36 bytes, base64url encoded
  */
@@ -106,6 +109,45 @@ function rawToUserFriendly(rawAddress: string, bounceable = true): string {
   return toBase64url(result)
 }
 
+/**
+ * Parse a user-friendly TON address (base64/base64url) to raw workchain:hash format.
+ */
+function parseUserFriendlyAddress(address: string): { workchain: number; hash: Uint8Array } {
+  const data = fromBase64(address)
+  if (data.length !== 36) {
+    throw new ChainKitError(ErrorCode.INVALID_ADDRESS, `Invalid user-friendly address length: ${data.length}`)
+  }
+
+  // Verify CRC16
+  const payload = data.subarray(0, 34)
+  const checksum = data.subarray(34, 36)
+  const computed = crc16(payload)
+  if (computed[0] !== checksum[0] || computed[1] !== checksum[1]) {
+    throw new ChainKitError(ErrorCode.INVALID_ADDRESS, 'Invalid user-friendly address checksum')
+  }
+
+  const workchain = data[1] > 127 ? data[1] - 256 : data[1] // signed byte
+  const hash = data.subarray(2, 34)
+
+  return { workchain, hash: new Uint8Array(hash) }
+}
+
+/**
+ * Parse any TON address format (raw or user-friendly) to workchain + hash.
+ */
+function parseAddress(address: string): { workchain: number; hash: Uint8Array } {
+  // Raw format: "0:hexhash" or "-1:hexhash"
+  if (address.includes(':')) {
+    const parts = address.split(':')
+    const workchain = parseInt(parts[0], 10)
+    const hash = hexToBytes(parts[1].padStart(64, '0'))
+    return { workchain, hash }
+  }
+
+  // User-friendly format (base64/base64url)
+  return parseUserFriendlyAddress(address)
+}
+
 // ---- Wallet V4R2 Constants ----
 
 /**
@@ -122,63 +164,136 @@ const WALLET_V4R2_CODE_BASE64 =
  */
 const DEFAULT_SUBWALLET_ID = 698983191
 
+/** Cached wallet v4r2 code cell (parsed once) */
+let _walletCodeCell: Cell | null = null
+
 /**
  * Get the wallet v4r2 code cell.
  */
 function getWalletV4R2Code(): Cell {
-  return Cell.fromBoc(Buffer.from(WALLET_V4R2_CODE_BASE64, 'base64'))[0]
+  if (!_walletCodeCell) {
+    _walletCodeCell = Cell.fromBoc(fromBase64(WALLET_V4R2_CODE_BASE64))[0]
+  }
+  return _walletCodeCell
 }
 
 /**
  * Build the wallet v4r2 initial data cell.
  * Layout: seqno(32) + subwallet_id(32) + public_key(256) + plugins_dict(empty)
  */
-function buildWalletData(publicKey: Buffer, subwalletId: number = DEFAULT_SUBWALLET_ID): Cell {
+function buildWalletData(publicKey: Uint8Array, subwalletId: number = DEFAULT_SUBWALLET_ID): Cell {
   return beginCell()
     .storeUint(0, 32) // seqno = 0
     .storeUint(subwalletId, 32)
-    .storeBuffer(publicKey) // 256 bits = 32 bytes
+    .storeBytes(publicKey) // 256 bits = 32 bytes
     .storeBit(0) // empty plugins dictionary
     .endCell()
 }
 
 /**
- * Get the wallet v4r2 StateInit for a given public key.
+ * Build the wallet v4r2 StateInit cell.
+ * TL-B: _ split_depth:(Maybe (## 5)) special:(Maybe TickTock) code:(Maybe ^Cell) data:(Maybe ^Cell) library:(HashmapE 256 SimpleLib)
  */
-function getWalletStateInit(publicKey: Buffer): StateInit {
-  const code = getWalletV4R2Code()
-  const data = buildWalletData(publicKey)
-  return { code, data }
+function buildStateInitCell(code: Cell, data: Cell): Cell {
+  return beginCell()
+    .storeBit(0) // split_depth: nothing
+    .storeBit(0) // special: nothing
+    .storeBit(1) // code: present
+    .storeBit(1) // data: present
+    .storeBit(0) // library: nothing
+    .storeRef(code)
+    .storeRef(data)
+    .endCell()
 }
 
 /**
  * Get the wallet v4r2 contract address for a given public key.
+ * Address = workchain:SHA256(stateInit_cell_representation)
  */
-function getWalletAddress(publicKey: Buffer, workchain = 0): TonAddress {
-  const stateInit = getWalletStateInit(publicKey)
-  return computeContractAddress(workchain, stateInit)
+function getWalletAddress(publicKey: Uint8Array, workchain = 0): { workchain: number; hash: Uint8Array; raw: string } {
+  const code = getWalletV4R2Code()
+  const data = buildWalletData(publicKey)
+  const stateInitCell = buildStateInitCell(code, data)
+  const hash = stateInitCell.hash()
+  return {
+    workchain,
+    hash,
+    raw: `${workchain}:${bytesToHex(hash)}`,
+  }
+}
+
+/**
+ * Build an internal message cell for a simple TON transfer.
+ *
+ * TL-B: int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool
+ *       src:MsgAddressInt dest:MsgAddressInt value:CurrencyCollection
+ *       ihr_fee:Grams fwd_fee:Grams created_lt:uint64 created_at:uint32
+ *       init:(Maybe (Either StateInit ^StateInit))
+ *       body:(Either X ^X)
+ */
+function buildInternalMessage(params: {
+  dest: { workchain: number; hash: Uint8Array }
+  value: bigint
+  bounce: boolean
+  body?: Cell
+}): Cell {
+  const { dest, value, bounce, body } = params
+
+  const builder = beginCell()
+  // int_msg_info$0
+  builder.storeBit(0)
+  // ihr_disabled = true
+  builder.storeBit(1)
+  // bounce
+  builder.storeBit(bounce)
+  // bounced = false
+  builder.storeBit(0)
+  // src: addr_none$00
+  builder.storeAddress(null)
+  // dest: addr_std$10
+  builder.storeAddress(dest)
+  // value: Grams (coins)
+  builder.storeCoins(value)
+  // extra currencies: empty (0 bit)
+  builder.storeBit(0)
+  // ihr_fee: 0
+  builder.storeCoins(0n)
+  // fwd_fee: 0
+  builder.storeCoins(0n)
+  // created_lt: 0
+  builder.storeUint(0, 64)
+  // created_at: 0
+  builder.storeUint(0, 32)
+  // init: nothing (0)
+  builder.storeBit(0)
+  // body: either inline or reference
+  if (body) {
+    builder.storeBit(1) // body as reference
+    builder.storeRef(body)
+  } else {
+    builder.storeBit(0) // no body (empty inline)
+  }
+
+  return builder.endCell()
 }
 
 /**
  * Build the wallet v4r2 transfer body (unsigned).
  *
  * Layout:
- *   subwallet_id(32) + valid_until(32) + seqno(32) + op(8) + [messages...]
- *
- * For simple transfer, op = 0.
- * Each message: mode(8) + ref(MessageRelaxed)
+ *   subwallet_id(32) + valid_until(32) + seqno(32) + op(8) + [mode(8) + ref(msg)]...
  */
 function buildTransferBody(params: {
   seqno: number
-  messages: MessageRelaxed[]
+  internalMsgCell: Cell
   subwalletId?: number
   validUntil?: number
 }): Cell {
   const {
     seqno,
-    messages,
+    internalMsgCell,
     subwalletId = DEFAULT_SUBWALLET_ID,
-    validUntil = Math.floor(Date.now() / 1000) + 60, // 60 seconds validity
+    validUntil = Math.floor(Date.now() / 1000) + 60,
   } = params
 
   const builder = beginCell()
@@ -187,49 +302,53 @@ function buildTransferBody(params: {
     .storeUint(seqno, 32)
     .storeUint(0, 8) // op = 0 (simple send)
 
-  for (const msg of messages) {
-    builder
-      .storeUint(3, 8) // send mode: pay fees separately + ignore errors
-      .storeRef(beginCell().store(storeMessageRelaxed(msg)).endCell())
-  }
+  // Message: mode(8) + ref(internal_msg)
+  builder
+    .storeUint(3, 8) // send mode: pay fees separately + ignore errors
+    .storeRef(internalMsgCell)
 
   return builder.endCell()
 }
 
 /**
- * Sign a wallet v4r2 transfer body and wrap in an external message.
- * Returns the BOC as a Buffer.
+ * Build the external message cell wrapping a signed wallet transfer.
+ *
+ * TL-B: ext_in_msg_info$10 src:MsgAddressExt dest:MsgAddressInt import_fee:Grams
+ *       init:(Maybe (Either StateInit ^StateInit))
+ *       body:(Either X ^X)
  */
-function signAndWrapTransfer(params: {
-  body: Cell
-  privateKey: Uint8Array
-  walletAddress: TonAddress
-  stateInit?: StateInit
-}): Buffer {
-  const { body, privateKey, walletAddress, stateInit } = params
+function buildExternalMessage(params: {
+  walletAddress: { workchain: number; hash: Uint8Array }
+  signedBody: Cell
+  stateInitCell?: Cell
+}): Cell {
+  const { walletAddress, signedBody, stateInitCell } = params
 
-  // Hash the body cell
-  const bodyHash = body.hash()
+  const builder = beginCell()
+  // ext_in_msg_info$10
+  builder.storeUint(2, 2)
+  // src: addr_none$00
+  builder.storeUint(0, 2)
+  // dest: addr_std$10
+  builder.storeAddress(walletAddress)
+  // import_fee: 0
+  builder.storeCoins(0n)
 
-  // Sign with ED25519
-  const signature = ed25519.sign(new Uint8Array(bodyHash), privateKey)
+  if (stateInitCell) {
+    // init: just (left stateInit) - inline state init
+    builder.storeBit(1) // has init
+    builder.storeBit(0) // inline (not reference)
+    // Write the stateInit cell data + refs inline
+    builder.storeCell(stateInitCell)
+  } else {
+    builder.storeBit(0) // no init
+  }
 
-  // Build signed body: signature(512 bits) + original body
-  const signedBody = beginCell()
-    .storeBuffer(Buffer.from(signature)) // 64 bytes = 512 bits
-    .storeSlice(body.beginParse())
-    .endCell()
+  // body: inline (the signed body fits within the remaining space)
+  builder.storeBit(0) // body inline
+  builder.storeCell(signedBody)
 
-  // Wrap in external message
-  const ext = external({
-    to: walletAddress,
-    init: stateInit,
-    body: signedBody,
-  })
-
-  // Serialize to BOC
-  const cell = beginCell().store(storeMessage(ext)).endCell()
-  return cell.toBoc()
+  return builder.endCell()
 }
 
 /**
@@ -285,12 +404,11 @@ export class TonSigner implements ChainSigner {
 
     // Get ED25519 public key (32 bytes)
     const publicKey = ed25519.getPublicKey(pkBytes)
-    const pubKeyBuffer = Buffer.from(publicKey)
 
     // Compute wallet v4r2 contract address
-    const walletAddress = getWalletAddress(pubKeyBuffer)
+    const wallet = getWalletAddress(publicKey)
 
-    return walletAddress.toRawString()
+    return wallet.raw
   }
 
   /**
@@ -311,8 +429,7 @@ export class TonSigner implements ChainSigner {
    * - Wraps in an external message targeting the wallet contract
    * - Serializes as BOC
    *
-   * Returns base64-encoded BOC string (prefixed with "0x" per ChainKit convention,
-   * but the actual content is base64, not hex).
+   * Returns base64-encoded BOC string.
    *
    * tx.nonce is used as the seqno. If not provided, defaults to 0.
    * tx.extra.bounce defaults to true.
@@ -331,9 +448,7 @@ export class TonSigner implements ChainSigner {
 
     // Get public key and wallet address
     const publicKey = ed25519.getPublicKey(pkBytes)
-    const pubKeyBuffer = Buffer.from(publicKey)
-    const walletAddress = getWalletAddress(pubKeyBuffer)
-    const walletStateInit = getWalletStateInit(pubKeyBuffer)
+    const walletAddr = getWalletAddress(publicKey)
 
     // Parse transaction parameters
     const bounce = tx.extra?.bounce !== undefined ? (tx.extra.bounce as boolean) : true
@@ -344,13 +459,9 @@ export class TonSigner implements ChainSigner {
     const includeStateInit = tx.extra?.stateInit === true || seqno === 0
 
     // Parse destination address
-    let toAddress: TonAddress
+    let destAddr: { workchain: number; hash: Uint8Array }
     try {
-      if (tx.to.includes(':')) {
-        toAddress = TonAddress.parseRaw(tx.to)
-      } else {
-        toAddress = TonAddress.parse(tx.to)
-      }
+      destAddr = parseAddress(tx.to)
     } catch {
       throw new ChainKitError(
         ErrorCode.INVALID_ADDRESS,
@@ -359,30 +470,53 @@ export class TonSigner implements ChainSigner {
     }
 
     // Build the internal transfer message
-    const internalMsg = internal({
-      to: toAddress,
+    const internalMsgCell = buildInternalMessage({
+      dest: destAddr,
       value: BigInt(tx.value),
       bounce,
-      body: tx.data ? tx.data : undefined,
     })
 
     // Build the wallet v4r2 transfer body
     const transferBody = buildTransferBody({
       seqno,
-      messages: [internalMsg],
+      internalMsgCell,
       validUntil,
     })
 
-    // Sign and wrap in external message
-    const bocBuffer = signAndWrapTransfer({
-      body: transferBody,
-      privateKey: pkBytes,
-      walletAddress,
-      stateInit: includeStateInit ? walletStateInit : undefined,
+    // Hash the body cell and sign with ED25519
+    const bodyHash = transferBody.hash()
+    const signature = ed25519.sign(bodyHash, pkBytes)
+
+    // Build signed body: signature(512 bits) + original body data + refs
+    const signedBody = beginCell()
+      .storeBytes(signature) // 64 bytes = 512 bits
+      .storeCell(transferBody) // inline: copy bits + refs from transfer body
+      .endCell()
+
+    // Build state init cell if needed
+    let stateInitCell: Cell | undefined
+    if (includeStateInit) {
+      const code = getWalletV4R2Code()
+      const data = buildWalletData(publicKey)
+      stateInitCell = buildStateInitCell(code, data)
+    }
+
+    // Build external message
+    const extCell = buildExternalMessage({
+      walletAddress: walletAddr,
+      signedBody,
+      stateInitCell,
     })
 
+    // Serialize to BOC
+    const boc = extCell.toBoc()
+
     // Return as base64 (this is what TON APIs expect for sendBoc)
-    return bocBuffer.toString('base64')
+    let binary = ''
+    for (const byte of boc) {
+      binary += String.fromCharCode(byte)
+    }
+    return btoa(binary)
   }
 
   /**
