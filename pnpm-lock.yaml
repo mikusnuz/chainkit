@@ -159,6 +159,21 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/flow:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/curves':
+        specifier: ^1.8.0
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/hedera:
     dependencies:
       '@chainkit/core':
@@ -174,7 +189,34 @@ importers:
         specifier: ^1.2.0
         version: 1.2.6
 
+  packages/icon:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@noble/secp256k1':
+        specifier: ^2.2.0
+        version: 2.3.0
+
   packages/icp:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/iota:
     dependencies:
       '@chainkit/core':
         specifier: workspace:*
@@ -239,6 +281,21 @@ importers:
       '@noble/ed25519':
         specifier: ^2.2.0
         version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
+  packages/neo:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/curves':
+        specifier: ^1.8.0
+        version: 1.9.7
       '@noble/hashes':
         specifier: ^1.7.0
         version: 1.8.0
