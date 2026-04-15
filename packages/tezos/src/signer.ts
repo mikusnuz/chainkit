@@ -513,7 +513,7 @@ export class TezosSigner implements ChainSigner {
       const counter = tx.extra.counter as string
       const gasLimit = (tx.extra.gasLimit as string) ?? '10300'
       const storageLimit = (tx.extra.storageLimit as string) ?? '0'
-      const fee = tx.fee?.amount ?? (tx.extra.fee as string) ?? '0'
+      const fee = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? (tx.extra?.fee as string) ?? '0'
 
       if (!tx.from || !tx.to || !counter) {
         throw new ChainKitError(
@@ -524,9 +524,9 @@ export class TezosSigner implements ChainSigner {
 
       operationBytes = forgeTransaction({
         branch,
-        source: tx.from,
+        source: tx.from as string,
         destination: tx.to,
-        amount: tx.value ?? '0',
+        amount: (tx.value ?? tx.amount ?? '0') as string,
         fee,
         counter,
         gasLimit,
@@ -534,7 +534,7 @@ export class TezosSigner implements ChainSigner {
       })
     } else if (tx.data) {
       // Legacy mode: use pre-forged bytes
-      operationBytes = hexToBytes(stripHexPrefix(tx.data))
+      operationBytes = hexToBytes(stripHexPrefix(tx.data as string))
     } else {
       throw new ChainKitError(
         ErrorCode.INVALID_PARAMS,

@@ -515,7 +515,7 @@ export class IotaSigner implements ChainSigner {
 
     // Check if raw mode is requested (backward-compatible: pre-serialized essence bytes)
     if (tx.fee?.mode === 'raw') {
-      const essenceBytes = hexToBytes(stripHexPrefix(tx.data))
+      const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
       const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
       const signature = ed25519.sign(essenceHash, pkBytes)
       return addHexPrefix(bytesToHex(signature))
@@ -524,10 +524,10 @@ export class IotaSigner implements ChainSigner {
     // Structured mode: parse IotaTransactionEssence from tx.data
     let essence: IotaTransactionEssence
     try {
-      essence = JSON.parse(tx.data) as IotaTransactionEssence
+      essence = JSON.parse(tx.data as string) as IotaTransactionEssence
     } catch {
       // Fallback: treat as raw hex essence bytes (backward compatibility)
-      const essenceBytes = hexToBytes(stripHexPrefix(tx.data))
+      const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
       const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
       const signature = ed25519.sign(essenceHash, pkBytes)
       return addHexPrefix(bytesToHex(signature))

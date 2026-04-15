@@ -251,7 +251,7 @@ export class VeChainSigner implements ChainSigner {
     const blockRef = (tx.extra?.blockRef as string) ?? '0x0000000000000000'
     const expiration = (tx.extra?.expiration as number) ?? 720
     const gasPriceCoef = (tx.extra?.gasPriceCoef as number) ?? 0
-    const gas = tx.fee?.gas ? parseInt(tx.fee.gas, 10) : 21000
+    const gas = tx.fee?.gas ? parseInt(tx.fee.gas as string, 10) : 21000
     const dependsOn = (tx.extra?.dependsOn as string) ?? null
     // VeChain nonce is random (not sequential like Ethereum) — generate 8 random bytes if not provided
     const nonce = (tx.extra?.nonce as string) ?? '0x' + bytesToHex(randomBytes(8))
@@ -259,7 +259,7 @@ export class VeChainSigner implements ChainSigner {
     // Build clause: [to, value, data]
     const toBytes = hexToBytes(stripHexPrefix(tx.to))
     const valueBytes = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
-    const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data)) : new Uint8Array([])
+    const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
     // Encode clause as an RLP list of its three fields
     const clauseEncoded = rlpEncode([toBytes, valueBytes, dataBytes])

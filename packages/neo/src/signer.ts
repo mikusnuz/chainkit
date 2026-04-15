@@ -570,8 +570,8 @@ export class NeoSigner implements ChainSigner {
     // Extract Neo-specific fields from the transaction
     const version = 0
     const nonce = tx.nonce ?? 0
-    const systemFee = BigInt(tx.fee?.systemFee ?? '0')
-    const networkFee = BigInt(tx.fee?.networkFee ?? '0')
+    const systemFee = BigInt(tx.fee?.systemFee as string ?? '0')
+    const networkFee = BigInt(tx.fee?.networkFee as string ?? '0')
     const validUntilBlock = Number(tx.extra?.validUntilBlock ?? 0)
     const networkMagic = Number(tx.extra?.networkMagic ?? 860833102) // Neo3 mainnet magic
 
@@ -584,13 +584,13 @@ export class NeoSigner implements ChainSigner {
     let script: Uint8Array
     if (tx.data) {
       // Raw script provided directly
-      script = hexToBytes(stripHexPrefix(tx.data))
+      script = hexToBytes(stripHexPrefix(tx.data as string))
     } else if (tx.to && tx.value) {
       // Build a NEP-17 transfer script from to/value/asset fields
       const asset = (tx.extra?.asset as string) ?? 'GAS'
       const contractHash = resolveContractHash(asset)
       const toScriptHash = addressToScriptHash(tx.to)
-      const amount = BigInt(tx.value)
+      const amount = BigInt(tx.value as string)
       script = buildTransferScript(contractHash, senderScriptHash, toScriptHash, amount)
     } else {
       throw new ChainKitError(

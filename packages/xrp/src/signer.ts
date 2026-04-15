@@ -431,7 +431,7 @@ export class XrpSigner implements ChainSigner {
       { name: 'Amount', encode: () => encodeXrpAmount('Amount', amount) },
       { name: 'Fee', encode: () => encodeXrpAmount('Fee', fee) },
       { name: 'SigningPubKey', encode: () => encodeBlob('SigningPubKey', publicKey) },
-      { name: 'Account', encode: () => encodeAccountId('Account', tx.from) },
+      { name: 'Account', encode: () => encodeAccountId('Account', tx.from as string) },
       { name: 'Destination', encode: () => encodeAccountId('Destination', tx.to) },
     ]
 

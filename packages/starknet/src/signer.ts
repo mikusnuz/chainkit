@@ -193,7 +193,7 @@ export class StarknetSigner implements ChainSigner {
     }
 
     // The data field contains the hash to sign
-    const msgHash = hexToBytes(stripHexPrefix(tx.data))
+    const msgHash = hexToBytes(stripHexPrefix(tx.data as string))
 
     const signature = starkCurve.sign(msgHash, pkBytes, { prehash: false, lowS: false })
     const sigBytes = signature.toCompactRawBytes()

@@ -514,7 +514,7 @@ export class StacksSigner implements ChainSigner {
 
     // If tx.data contains a pre-serialized transaction hash, sign it directly
     if (tx.data) {
-      const txHash = hexToBytes(stripHexPrefix(tx.data))
+      const txHash = hexToBytes(stripHexPrefix(tx.data as string))
       const signature = secp256k1.sign(txHash, pkBytes)
 
       // Stacks signature format: recovery byte (1) + r (32) + s (32) = 65 bytes

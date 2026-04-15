@@ -473,7 +473,7 @@ export class TonSigner implements ChainSigner {
     // Build the internal transfer message
     const internalMsgCell = buildInternalMessage({
       dest: destAddr,
-      value: BigInt(tx.value),
+      value: BigInt(tx.value as string),
       bounce,
     })
 

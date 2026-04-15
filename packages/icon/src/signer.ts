@@ -165,7 +165,7 @@ export class IconSigner implements ChainSigner {
 
     // Add value if non-zero
     if (tx.value && tx.value !== '0') {
-      const valueLoop = BigInt(tx.value)
+      const valueLoop = BigInt(tx.value as string)
       txParams.value = '0x' + valueLoop.toString(16)
     }
 
@@ -188,7 +188,7 @@ export class IconSigner implements ChainSigner {
       if (tx.extra.data) {
         txParams.data = tx.extra.data
       } else if (tx.data) {
-        txParams.data = JSON.parse(tx.data)
+        txParams.data = JSON.parse(tx.data as string)
       }
     }
 

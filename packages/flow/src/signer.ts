@@ -285,7 +285,7 @@ export class FlowSigner implements ChainSigner {
       )
     }
 
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data))
+    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
 
     // Flow signs the SHA-256 hash of the transaction payload
     const msgHash = sha256(messageBytes)

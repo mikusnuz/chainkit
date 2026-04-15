@@ -435,7 +435,7 @@ export class CardanoSigner implements ChainSigner {
       )
     }
 
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data))
+    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
 
     // If the data is not already a 32-byte hash, hash it with blake2b-256
     const hashToSign = messageBytes.length === 32

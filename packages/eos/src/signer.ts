@@ -135,11 +135,11 @@ function serializeTransaction(
   const delaySec = tx.extra?.delaySec as number ?? 0
 
   // Serialize the action data (hex-encoded in tx.data)
-  const actionData = tx.data ? hexToBytes(tx.data.startsWith('0x') ? tx.data.slice(2) : tx.data) : new Uint8Array(0)
+  const txData = tx.data as string | undefined; const actionData = txData ? hexToBytes(txData.startsWith("0x") ? txData.slice(2) : txData) : new Uint8Array(0)
 
   const account = tx.extra?.account as string ?? 'eosio.token'
   const actionName = tx.extra?.actionName as string ?? 'transfer'
-  const actor = tx.from
+  const actor = tx.from as string
   const permission = tx.extra?.permission as string ?? 'active'
 
   // Encode account names as uint64

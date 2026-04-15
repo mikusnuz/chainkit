@@ -580,7 +580,7 @@ export class PolkadotSigner implements ChainSigner {
 
     if (tx.data) {
       // Use pre-encoded call data
-      callData = hexToBytes(stripHexPrefix(tx.data))
+      callData = hexToBytes(stripHexPrefix(tx.data as string))
     } else {
       // Build Balances.transferKeepAlive call data
       if (!tx.to) {

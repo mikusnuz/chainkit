@@ -366,7 +366,7 @@ export class IcpSigner implements ChainSigner {
       )
     }
 
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data))
+    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
     const signature = ed25519.sign(messageBytes, pkBytes)
 
     return addHexPrefix(bytesToHex(signature))

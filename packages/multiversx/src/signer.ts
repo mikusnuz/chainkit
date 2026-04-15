@@ -226,7 +226,7 @@ export class MultiversXSigner implements ChainSigner {
 
     if (tx.data) {
       // If tx.data is provided, use it as the serialized transaction message
-      messageBytes = hexToBytes(stripHexPrefix(tx.data))
+      messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
     } else {
       // Build a transaction JSON from the UnsignedTx fields
       const txObj: Record<string, unknown> = {

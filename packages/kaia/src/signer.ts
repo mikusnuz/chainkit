@@ -217,7 +217,7 @@ export class KaiaSigner implements ChainSigner {
     const nonce = tx.nonce ?? 0
     const to = hexToBytes(stripHexPrefix(tx.to))
     const value = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
-    const data = tx.data ? hexToBytes(stripHexPrefix(tx.data)) : new Uint8Array([])
+    const data = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
     // Determine transaction type
     const isEip1559 = tx.fee?.maxFeePerGas !== undefined
@@ -225,13 +225,13 @@ export class KaiaSigner implements ChainSigner {
     if (isEip1559) {
       // EIP-1559 (Type 2) transaction
       const maxPriorityFeePerGas = tx.fee?.maxPriorityFeePerGas
-        ? hexToMinimalBytes(tx.fee.maxPriorityFeePerGas)
+        ? hexToMinimalBytes(tx.fee.maxPriorityFeePerGas as string)
         : new Uint8Array([])
       const maxFeePerGas = tx.fee?.maxFeePerGas
-        ? hexToMinimalBytes(tx.fee.maxFeePerGas)
+        ? hexToMinimalBytes(tx.fee.maxFeePerGas as string)
         : new Uint8Array([])
       const gasLimit = tx.fee?.gasLimit
-        ? hexToMinimalBytes(tx.fee.gasLimit)
+        ? hexToMinimalBytes(tx.fee.gasLimit as string)
         : hexToMinimalBytes('0x5208') // 21000 default
 
       // EIP-1559 payload: [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]
@@ -295,10 +295,10 @@ export class KaiaSigner implements ChainSigner {
     } else {
       // Legacy transaction
       const gasPrice = tx.fee?.gasPrice
-        ? hexToMinimalBytes(tx.fee.gasPrice)
+        ? hexToMinimalBytes(tx.fee.gasPrice as string)
         : new Uint8Array([])
       const gasLimit = tx.fee?.gasLimit
-        ? hexToMinimalBytes(tx.fee.gasLimit)
+        ? hexToMinimalBytes(tx.fee.gasLimit as string)
         : hexToMinimalBytes('0x5208')
 
       // EIP-155 signing: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]

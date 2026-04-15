@@ -399,9 +399,9 @@ export class CosmosSigner implements ChainSigner {
     const memo = (extra.memo as string) ?? ''
 
     // Fee parameters
-    const feeDenom = tx.fee?.denom ?? 'uatom'
-    const feeAmount = tx.fee?.amount ?? '0'
-    const gasLimit = parseInt(tx.fee?.gas ?? '200000', 10)
+    const feeDenom = (tx.fee?.denom as string) ?? 'uatom'
+    const feeAmount = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? '0'
+    const gasLimit = parseInt((tx.fee?.gasLimit as string) ?? (tx.fee?.gas as string) ?? '200000', 10)
 
     // Build messages
     let protoMessages: Array<{ typeUrl: string; value: Uint8Array }>
@@ -412,8 +412,8 @@ export class CosmosSigner implements ChainSigner {
     } else {
       // Default: build a single MsgSend from from/to/value
       const denom = (extra.denom as string) ?? feeDenom
-      const msgSendBytes = encodeMsgSend(tx.from, tx.to, [
-        { denom, amount: tx.value },
+      const msgSendBytes = encodeMsgSend(tx.from ?? '', tx.to, [
+        { denom, amount: tx.value ?? tx.amount ?? '0' },
       ])
       protoMessages = [
         { typeUrl: '/cosmos.bank.v1beta1.MsgSend', value: msgSendBytes },

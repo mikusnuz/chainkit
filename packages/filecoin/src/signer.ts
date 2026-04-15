@@ -430,16 +430,16 @@ export class FilecoinSigner implements ChainSigner {
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
 
     const gasLimit = tx.fee?.gasLimit ? parseInt(tx.fee.gasLimit, 10) : 1000000
-    const gasFeeCap = tx.fee?.gasFeeCap ?? '0'
-    const gasPremium = tx.fee?.gasPremium ?? '0'
+    const gasFeeCap = (tx.fee?.gasFeeCap as string) ?? '0'
+    const gasPremium = (tx.fee?.gasPremium as string) ?? '0'
     const method = (tx.extra?.method as number) ?? 0
     const nonce = tx.nonce ?? 0
 
     // CBOR-encode the message
     const cborMessage = cborEncodeMessage({
       to: tx.to,
-      from: tx.from,
-      value: tx.value,
+      from: tx.from as string,
+      value: (tx.value ?? tx.amount ?? "0") as string,
       method,
       nonce,
       gasLimit,

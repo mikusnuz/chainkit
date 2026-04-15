@@ -276,7 +276,7 @@ export class StellarSigner implements ChainSigner {
       )
     }
 
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data))
+    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
 
     // Sign with ED25519
     const signature = ed25519.sign(messageBytes, pkBytes)
