@@ -201,4 +201,80 @@ describe('EthereumSigner', () => {
       expect(sig1).toBe(sig2)
     })
   })
+
+  describe('signTypedData', () => {
+    it('should sign basic EIP-712 typed data', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+      const sig = await signer.signTypedData({
+        privateKey: pk,
+        domain: {
+          name: 'Test',
+          version: '1',
+          chainId: 1,
+          verifyingContract: '0x0000000000000000000000000000000000000001',
+        },
+        types: {
+          Mail: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'contents', type: 'string' },
+          ],
+        },
+        primaryType: 'Mail',
+        message: {
+          from: '0x0000000000000000000000000000000000000001',
+          to: '0x0000000000000000000000000000000000000002',
+          contents: 'Hello',
+        },
+      })
+
+      expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
+    })
+
+    it('should reject array types in signTypedData', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      await expect(signer.signTypedData({
+        privateKey: pk,
+        domain: {
+          name: 'Test',
+          version: '1',
+          chainId: 1,
+        },
+        types: {
+          Mail: [
+            { name: 'recipients', type: 'address[]' },
+            { name: 'contents', type: 'string' },
+          ],
+        },
+        primaryType: 'Mail',
+        message: {
+          recipients: ['0x0000000000000000000000000000000000000001'],
+          contents: 'Hello',
+        },
+      })).rejects.toThrow('Array types not yet supported')
+    })
+
+    it('should reject fixed-size array types in signTypedData', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      await expect(signer.signTypedData({
+        privateKey: pk,
+        domain: {
+          name: 'Test',
+          version: '1',
+          chainId: 1,
+        },
+        types: {
+          Data: [
+            { name: 'values', type: 'uint256[3]' },
+          ],
+        },
+        primaryType: 'Data',
+        message: {
+          values: [1, 2, 3],
+        },
+      })).rejects.toThrow('Array types not yet supported')
+    })
+  })
 })

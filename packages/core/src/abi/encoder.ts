@@ -127,6 +127,13 @@ export function encodeInt256(value: string | number | bigint): string {
     n = BigInt(value)
   }
 
+  // SA-015: Validate int256 range to prevent silent overflow/wrap-around
+  const MAX_INT256 = (1n << 255n) - 1n
+  const MIN_INT256 = -(1n << 255n)
+  if (n > MAX_INT256 || n < MIN_INT256) {
+    throw new Error(`Value out of int256 range: ${n}`)
+  }
+
   if (n >= 0n) {
     return n.toString(16).padStart(64, '0')
   }

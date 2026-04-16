@@ -454,6 +454,32 @@ describe('createChainInstance', () => {
     expect(txHash).toBe('0xtxhash')
   })
 
+  it('should strip outputs and inputs from options to prevent fund redirection', async () => {
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      privateKey: '0xprivkey',
+    }) as FullChainInstance
+
+    await instance.send({
+      to: '0xrecipient',
+      amount: '1000',
+      options: {
+        outputs: [{ address: '0xattacker', value: '1000' }],
+        inputs: [{ txHash: 'abc', outputIndex: 0, value: '2000' }],
+        chainId: 1,
+      },
+    })
+
+    // The signed tx should NOT contain outputs or inputs from options
+    const signCall = mockSigner.signTransaction.mock.calls[0][0]
+    expect(signCall.tx.extra).toBeDefined()
+    expect(signCall.tx.extra.outputs).toBeUndefined()
+    expect(signCall.tx.extra.inputs).toBeUndefined()
+    // But other options like chainId should pass through
+    expect(signCall.tx.extra.chainId).toBe(1)
+  })
+
   it('should prepare transaction without signing', async () => {
     const instance = await createChainInstance({
       chain: mockChain,

@@ -106,6 +106,28 @@ describe('ABI Encoder', () => {
       const result = encodeInt256(-2)
       expect(result).toBe('f'.repeat(63) + 'e')
     })
+
+    it('should encode max int256 (2^255 - 1)', () => {
+      const maxInt256 = (1n << 255n) - 1n
+      const result = encodeInt256(maxInt256)
+      expect(result).toBe('7' + 'f'.repeat(63))
+    })
+
+    it('should encode min int256 (-2^255)', () => {
+      const minInt256 = -(1n << 255n)
+      const result = encodeInt256(minInt256)
+      expect(result).toBe('8' + '0'.repeat(63))
+    })
+
+    it('should throw for value exceeding max int256 (2^255)', () => {
+      const overflow = 1n << 255n
+      expect(() => encodeInt256(overflow)).toThrow('Value out of int256 range')
+    })
+
+    it('should throw for value below min int256 (-2^255 - 1)', () => {
+      const underflow = -(1n << 255n) - 1n
+      expect(() => encodeInt256(underflow)).toThrow('Value out of int256 range')
+    })
   })
 
   describe('encodeBytes32', () => {

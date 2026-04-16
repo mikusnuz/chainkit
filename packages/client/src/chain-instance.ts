@@ -78,10 +78,23 @@ function createFullInstance(
     const from = signer.getAddress(privateKey)
 
     // SA-013: Use nonce mutex for concurrent send safety
+    // SA-018: Note — when using 'fastest' RPC strategy, nonce and fee
+    // responses come from whichever endpoint replies first. A rogue
+    // endpoint could return manipulated data. For production wallets,
+    // prefer 'failover' strategy to ensure trusted endpoint priority.
     const [nonce, feeEstimate] = await Promise.all([
       getNextNonce(),
       provider.estimateFee(),
     ])
+
+    // SA-014: Strip signing-critical fields from options to prevent
+    // output/input override attacks (e.g., Bitcoin fund redirection via extra.outputs)
+    let safeExtra: Record<string, unknown> | undefined
+    if (params.options) {
+      safeExtra = { ...params.options }
+      delete safeExtra.outputs
+      delete safeExtra.inputs
+    }
 
     // Build tx with auto-fetched params + user overrides
     const tx: UnsignedTx = {
@@ -93,7 +106,7 @@ function createFullInstance(
       memo: params.memo,
       nonce: typeof nonce === 'number' ? nonce : parseInt(String(nonce), 10),
       fee: { fee: feeEstimate.average },
-      extra: params.options,
+      extra: safeExtra,
     }
 
     return tx

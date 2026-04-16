@@ -250,6 +250,72 @@ describe('BitcoinSigner', () => {
       await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('at least one output')
     })
 
+    it('should throw if outputs exceed inputs', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
+      const address = signer.getAddress(pk)
+
+      const tx = {
+        from: address,
+        to: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+        value: '50000',
+        extra: {
+          inputs: [
+            { txHash: 'a'.repeat(64), outputIndex: 0, value: '10000' },
+          ],
+          outputs: [
+            { address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', value: '50000' },
+          ],
+        },
+      }
+
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('Outputs exceed inputs')
+    })
+
+    it('should throw if fee exceeds 50% of inputs', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
+      const address = signer.getAddress(pk)
+
+      const tx = {
+        from: address,
+        to: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+        value: '1000',
+        extra: {
+          inputs: [
+            { txHash: 'a'.repeat(64), outputIndex: 0, value: '100000' },
+          ],
+          outputs: [
+            // Only 1000 out of 100000 input — fee = 99000 which is > 50000 (50%)
+            { address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', value: '1000' },
+          ],
+        },
+      }
+
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('Fee too high')
+    })
+
+    it('should throw if output address is invalid for network', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
+      const address = signer.getAddress(pk)
+
+      const tx = {
+        from: address,
+        to: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+        value: '50000',
+        extra: {
+          inputs: [
+            { txHash: 'a'.repeat(64), outputIndex: 0, value: '100000' },
+          ],
+          outputs: [
+            // Testnet address on mainnet signer
+            { address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', value: '50000' },
+            { address: address, value: '49000' },
+          ],
+        },
+      }
+
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow('Invalid output address')
+    })
+
     it('should handle multiple inputs', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, BTC_SEGWIT_PATH)
       const address = signer.getAddress(pk)

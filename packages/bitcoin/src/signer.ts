@@ -266,6 +266,25 @@ export class BitcoinSigner implements ChainSigner {
         throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Transaction must have at least one output')
       }
 
+      // SA-016: Validate each output address matches the signer's network
+      for (const output of outputs) {
+        if (!this.validateAddress(output.address)) {
+          throw new ChainKitError(ErrorCode.INVALID_ADDRESS, `Invalid output address for ${this.network}: ${output.address}`)
+        }
+      }
+
+      // SA-017: Fee sanity check - outputs must not exceed inputs, fee must not exceed 50% of inputs
+      const totalInputs = inputs.reduce((sum, i) => sum + BigInt(i.value), 0n)
+      const totalOutputs = outputs.reduce((sum, o) => sum + BigInt(o.value), 0n)
+      if (totalOutputs > totalInputs) {
+        throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Outputs exceed inputs')
+      }
+      const fee = totalInputs - totalOutputs
+      const maxFee = totalInputs / 2n
+      if (fee > maxFee) {
+        throw new ChainKitError(ErrorCode.INVALID_PARAMS, `Fee too high: ${fee} satoshi (max ${maxFee})`)
+      }
+
       // BIP143 SegWit signing for P2WPKH
       const version = writeUint32LE(2) // version 2
       const locktime = writeUint32LE(0)

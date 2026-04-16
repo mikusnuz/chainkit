@@ -476,6 +476,10 @@ export class EthereumSigner implements ChainSigner, EvmSignerCapable {
       }
 
       const encodeValue = (type: string, value: unknown): Uint8Array => {
+        // SA-019: Explicitly reject array types rather than silently producing wrong hashes
+        if (type.endsWith('[]') || /\[\d+\]$/.test(type)) {
+          throw new ChainKitError(ErrorCode.UNSUPPORTED_FEATURE, `Array types not yet supported in signTypedData: ${type}`)
+        }
         if (type === 'string') {
           return keccak_256(new TextEncoder().encode(value as string))
         }
