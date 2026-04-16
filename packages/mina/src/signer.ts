@@ -575,7 +575,9 @@ export class MinaSigner implements ChainSigner {
    */
   async signTransactionHash(privateKey: string, hash: string): Promise<string> {
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pk = bytesToNumberBE(hexToBytes(pkHex))
+    const pkBytes = hexToBytes(pkHex)
+    try {
+    const pk = bytesToNumberBE(pkBytes)
 
     if (pk === 0n || pk >= PALLAS_ORDER) {
       throw new ChainKitError(
@@ -617,6 +619,9 @@ export class MinaSigner implements ChainSigner {
       field: R.x.toString(),
       scalar: s.toString(),
     })
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -630,7 +635,9 @@ export class MinaSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<string> {
     const { privateKey, message } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pk = bytesToNumberBE(hexToBytes(pkHex))
+    const pkBytes = hexToBytes(pkHex)
+    try {
+    const pk = bytesToNumberBE(pkBytes)
 
     if (pk === 0n || pk >= PALLAS_ORDER) {
       throw new ChainKitError(
@@ -654,5 +661,8 @@ export class MinaSigner implements ChainSigner {
     const signature = signLegacy(input, pk, this.network)
 
     return JSON.stringify(signature)
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }
