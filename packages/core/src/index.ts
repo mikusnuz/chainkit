@@ -53,6 +53,9 @@ export {
 // Transaction Utilities
 export { waitForTransaction } from './utils/index.js'
 
+// Security Utilities
+export { SecureKey } from './utils/index.js'
+
 // ABI Encoder/Decoder
 export {
   encodeFunctionCall,

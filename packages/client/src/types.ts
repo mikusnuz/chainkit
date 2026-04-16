@@ -84,4 +84,10 @@ export interface FullChainInstance extends ReadOnlyChainInstance {
   signMessage: ChainSigner['signMessage']
   getAddress(): string
   readonly signer: ChainSigner
+  /**
+   * Zero out the stored private key material.
+   * After calling destroy(), the instance can no longer sign or send transactions.
+   * This helps mitigate the risk of private keys lingering in memory.
+   */
+  destroy(): void
 }

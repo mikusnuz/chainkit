@@ -529,4 +529,63 @@ describe('createChainInstance', () => {
     const result = await instance.waitForTransaction('0xtxhash', { intervalMs: 10 })
     expect(result.status).toBe('confirmed')
   })
+
+  it('should have destroy() method on full instance', async () => {
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      privateKey: '0xprivkey',
+    }) as FullChainInstance
+
+    expect(instance.destroy).toBeDefined()
+    expect(typeof instance.destroy).toBe('function')
+    // Should not throw
+    instance.destroy()
+  })
+
+  it('should warn when fastest strategy is used with signing capabilities', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://rpc1.test', 'http://rpc2.test'],
+      strategy: 'fastest',
+      privateKey: '0xprivkey',
+    })
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"fastest" RPC strategy is not recommended'),
+    )
+
+    warnSpy.mockRestore()
+  })
+
+  it('should not warn when fastest strategy is used without signing', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://rpc1.test', 'http://rpc2.test'],
+      strategy: 'fastest',
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
+
+  it('should not warn when failover strategy is used with signing', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://rpc1.test'],
+      strategy: 'failover',
+      privateKey: '0xprivkey',
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
 })

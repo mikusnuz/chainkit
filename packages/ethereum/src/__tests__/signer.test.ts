@@ -231,10 +231,63 @@ describe('EthereumSigner', () => {
       expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
 
-    it('should reject array types in signTypedData', async () => {
+    it('should sign EIP-712 typed data with dynamic array', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
 
-      await expect(signer.signTypedData({
+      const sig = await signer.signTypedData({
+        privateKey: pk,
+        domain: {
+          name: 'Test',
+          version: '1',
+          chainId: 1,
+        },
+        types: {
+          Mail: [
+            { name: 'recipients', type: 'address[]' },
+            { name: 'contents', type: 'string' },
+          ],
+        },
+        primaryType: 'Mail',
+        message: {
+          recipients: [
+            '0x0000000000000000000000000000000000000001',
+            '0x0000000000000000000000000000000000000002',
+          ],
+          contents: 'Hello',
+        },
+      })
+
+      expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
+    })
+
+    it('should sign EIP-712 typed data with fixed-size array', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      const sig = await signer.signTypedData({
+        privateKey: pk,
+        domain: {
+          name: 'Test',
+          version: '1',
+          chainId: 1,
+        },
+        types: {
+          Data: [
+            { name: 'values', type: 'uint256[3]' },
+          ],
+        },
+        primaryType: 'Data',
+        message: {
+          values: [1, 2, 3],
+        },
+      })
+
+      expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
+    })
+
+    it('should produce deterministic signatures for array typed data', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      const params = {
         privateKey: pk,
         domain: {
           name: 'Test',
@@ -252,13 +305,72 @@ describe('EthereumSigner', () => {
           recipients: ['0x0000000000000000000000000000000000000001'],
           contents: 'Hello',
         },
-      })).rejects.toThrow('Array types not yet supported')
+      }
+
+      const sig1 = await signer.signTypedData(params)
+      const sig2 = await signer.signTypedData(params)
+      expect(sig1).toBe(sig2)
     })
 
-    it('should reject fixed-size array types in signTypedData', async () => {
+    it('should produce different signatures for different array contents', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      const baseDomain = { name: 'Test', version: '1', chainId: 1 }
+      const baseTypes = {
+        Data: [{ name: 'values', type: 'uint256[]' }],
+      }
+
+      const sig1 = await signer.signTypedData({
+        privateKey: pk,
+        domain: baseDomain,
+        types: baseTypes,
+        primaryType: 'Data',
+        message: { values: [1, 2, 3] },
+      })
+
+      const sig2 = await signer.signTypedData({
+        privateKey: pk,
+        domain: baseDomain,
+        types: baseTypes,
+        primaryType: 'Data',
+        message: { values: [4, 5, 6] },
+      })
+
+      expect(sig1).not.toBe(sig2)
+    })
+
+    it('should reject fixed-size array with wrong length', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
 
       await expect(signer.signTypedData({
+        privateKey: pk,
+        domain: { name: 'Test', version: '1', chainId: 1 },
+        types: {
+          Data: [{ name: 'values', type: 'uint256[3]' }],
+        },
+        primaryType: 'Data',
+        message: { values: [1, 2] },
+      })).rejects.toThrow('Expected array of length 3')
+    })
+
+    it('should reject non-array value for array type', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      await expect(signer.signTypedData({
+        privateKey: pk,
+        domain: { name: 'Test', version: '1', chainId: 1 },
+        types: {
+          Data: [{ name: 'values', type: 'uint256[]' }],
+        },
+        primaryType: 'Data',
+        message: { values: 'not-an-array' },
+      })).rejects.toThrow('Expected array for type')
+    })
+
+    it('should sign EIP-712 typed data with struct array', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      const sig = await signer.signTypedData({
         privateKey: pk,
         domain: {
           name: 'Test',
@@ -266,15 +378,49 @@ describe('EthereumSigner', () => {
           chainId: 1,
         },
         types: {
-          Data: [
-            { name: 'values', type: 'uint256[3]' },
+          Batch: [
+            { name: 'mails', type: 'Mail[]' },
+          ],
+          Mail: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'contents', type: 'string' },
           ],
         },
-        primaryType: 'Data',
+        primaryType: 'Batch',
         message: {
-          values: [1, 2, 3],
+          mails: [
+            {
+              from: '0x0000000000000000000000000000000000000001',
+              to: '0x0000000000000000000000000000000000000002',
+              contents: 'Hello',
+            },
+            {
+              from: '0x0000000000000000000000000000000000000003',
+              to: '0x0000000000000000000000000000000000000004',
+              contents: 'World',
+            },
+          ],
         },
-      })).rejects.toThrow('Array types not yet supported')
+      })
+
+      expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
+    })
+
+    it('should handle empty dynamic arrays', async () => {
+      const pk = await signer.derivePrivateKey(TEST_MNEMONIC, ETH_HD_PATH)
+
+      const sig = await signer.signTypedData({
+        privateKey: pk,
+        domain: { name: 'Test', version: '1', chainId: 1 },
+        types: {
+          Data: [{ name: 'values', type: 'uint256[]' }],
+        },
+        primaryType: 'Data',
+        message: { values: [] },
+      })
+
+      expect(sig).toMatch(/^0x[0-9a-f]{130}$/)
     })
   })
 })

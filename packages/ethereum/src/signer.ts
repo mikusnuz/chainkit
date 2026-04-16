@@ -476,10 +476,35 @@ export class EthereumSigner implements ChainSigner, EvmSignerCapable {
       }
 
       const encodeValue = (type: string, value: unknown): Uint8Array => {
-        // SA-019: Explicitly reject array types rather than silently producing wrong hashes
-        if (type.endsWith('[]') || /\[\d+\]$/.test(type)) {
-          throw new ChainKitError(ErrorCode.UNSUPPORTED_FEATURE, `Array types not yet supported in signTypedData: ${type}`)
+        // EIP-712: Dynamic array types (e.g., uint256[], address[])
+        if (type.endsWith('[]')) {
+          if (!Array.isArray(value)) {
+            throw new ChainKitError(ErrorCode.INVALID_PARAMS, `Expected array for type ${type}`)
+          }
+          const baseType = type.slice(0, -2)
+          const encodedElements = (value as unknown[]).map(v => encodeValue(baseType, v))
+          const concatenated = new Uint8Array(encodedElements.length * 32)
+          encodedElements.forEach((e, i) => concatenated.set(e, i * 32))
+          return keccak_256(concatenated)
         }
+
+        // EIP-712: Fixed-size array types (e.g., uint256[3])
+        const fixedArrayMatch = type.match(/^(.+)\[(\d+)\]$/)
+        if (fixedArrayMatch) {
+          const baseType = fixedArrayMatch[1]
+          const size = parseInt(fixedArrayMatch[2])
+          if (!Array.isArray(value) || value.length !== size) {
+            throw new ChainKitError(
+              ErrorCode.INVALID_PARAMS,
+              `Expected array of length ${size} for type ${type}, got ${Array.isArray(value) ? value.length : 'non-array'}`,
+            )
+          }
+          const encodedElements = (value as unknown[]).map(v => encodeValue(baseType, v))
+          const concatenated = new Uint8Array(encodedElements.length * 32)
+          encodedElements.forEach((e, i) => concatenated.set(e, i * 32))
+          return keccak_256(concatenated)
+        }
+
         if (type === 'string') {
           return keccak_256(new TextEncoder().encode(value as string))
         }

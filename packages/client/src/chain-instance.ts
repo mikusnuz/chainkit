@@ -1,5 +1,5 @@
 import type { ChainProvider, ChainSigner, UnsignedTx, TransactionInfo, WaitForTransactionOptions } from '@chainkit/core'
-import { waitForTransaction as waitForTransactionHelper, ChainKitError, ErrorCode } from '@chainkit/core'
+import { waitForTransaction as waitForTransactionHelper, ChainKitError, ErrorCode, SecureKey } from '@chainkit/core'
 import type {
   ChainConfig,
   ReadOnlyChainInstance,
@@ -39,6 +39,9 @@ function createFullInstance(
   privateKey: string,
 ): FullChainInstance {
   const readOnly = createReadOnlyInstance(provider)
+
+  // Store key material in a SecureKey so it can be zeroed on destroy()
+  const secureKey = new SecureKey(privateKey)
 
   // SA-013: Nonce mutex for concurrent sends
   let localNonce: number | null = null
@@ -140,6 +143,10 @@ function createFullInstance(
     getAddress(): string {
       return signer.getAddress(privateKey)
     },
+
+    destroy(): void {
+      secureKey.destroy()
+    },
   }
 }
 
@@ -158,6 +165,17 @@ export async function createChainInstance(
     timeout: config.timeout,
     retries: config.retries,
   })
+
+  // SECURITY: Warn when 'fastest' strategy is used with signing capabilities.
+  // The 'fastest' strategy accepts the first RPC response without consensus,
+  // which means a rogue endpoint could return manipulated nonce or fee data.
+  if (config.strategy === 'fastest' && (config.privateKey || config.mnemonic)) {
+    console.warn(
+      '[ChainKit] WARNING: "fastest" RPC strategy is not recommended for signing operations. ' +
+      'A rogue endpoint could manipulate nonce or fee data. ' +
+      'Consider "failover" or "round-robin" for production wallets.',
+    )
+  }
 
   // No key material -> read-only
   if (!config.privateKey && !config.mnemonic) {
