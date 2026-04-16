@@ -73,9 +73,34 @@ export class AptosProvider
 
   /**
    * Get the APT balance of an address.
-   * Reads the CoinStore resource for 0x1::aptos_coin::AptosCoin.
+   * Uses the view function (Fungible Asset model) with fallback to legacy CoinStore resource.
    */
   async getBalance(address: Address): Promise<Balance> {
+    // Try view function first (works with new Fungible Asset model)
+    try {
+      const res = await aptosRequest<string[]>(
+        this.baseUrl,
+        '/v1/view',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            function: '0x1::coin::balance',
+            type_arguments: ['0x1::aptos_coin::AptosCoin'],
+            arguments: [address],
+          }),
+        },
+      )
+
+      return {
+        address,
+        amount: String(res[0]),
+        symbol: 'APT',
+        decimals: 8,
+      }
+    } catch {
+      // Fallback to legacy CoinStore resource
+    }
+
     interface CoinStoreResource {
       type: string
       data: {

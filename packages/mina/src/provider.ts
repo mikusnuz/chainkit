@@ -57,7 +57,7 @@ function resolveEndpoint(config: ProviderConfig): string {
  * Mina uses a GraphQL API instead of JSON-RPC. This provider
  * makes GraphQL POST requests to the configured endpoint.
  *
- * Default testnet: https://devnet.minaprotocol.network/graphql
+ * Default testnet: https://api.minascan.io/node/devnet/v1/graphql
  */
 export class MinaProvider implements ChainProvider {
   private readonly endpoint: string

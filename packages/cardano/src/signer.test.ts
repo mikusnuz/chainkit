@@ -99,6 +99,27 @@ describe('CardanoSigner', () => {
     it('should throw for an invalid private key length', () => {
       expect(() => signer.getAddress('0x1234')).toThrow('Invalid private key length')
     })
+
+    it('should return a testnet address with addr_test prefix', async () => {
+      const testnetSigner = new CardanoSigner('testnet')
+      const privateKey = await testnetSigner.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
+      const address = testnetSigner.getAddress(privateKey)
+
+      expect(address).toMatch(/^addr_test1/)
+    })
+
+    it('should generate different prefixes for mainnet vs testnet', async () => {
+      const mainnetSigner = new CardanoSigner('mainnet')
+      const testnetSigner = new CardanoSigner('testnet')
+      const privateKey = await mainnetSigner.derivePrivateKey(TEST_MNEMONIC, CARDANO_PATH)
+
+      const mainnetAddr = mainnetSigner.getAddress(privateKey)
+      const testnetAddr = testnetSigner.getAddress(privateKey)
+
+      expect(mainnetAddr).toMatch(/^addr1/)
+      expect(testnetAddr).toMatch(/^addr_test1/)
+      expect(mainnetAddr).not.toBe(testnetAddr)
+    })
   })
 
   describe('signMessage', () => {

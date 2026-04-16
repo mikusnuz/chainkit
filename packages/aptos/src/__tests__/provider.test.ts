@@ -28,7 +28,34 @@ describe('AptosProvider', () => {
   }
 
   describe('getBalance', () => {
-    it('should return APT balance with 8 decimals', async () => {
+    it('should return APT balance via view function (Fungible Asset model)', async () => {
+      // View function response returns an array
+      mockResponse(['100000000'])
+
+      const balance = await provider.getBalance(TEST_ADDRESS)
+      expect(balance.amount).toBe('100000000')
+      expect(balance.decimals).toBe(8)
+      expect(balance.symbol).toBe('APT')
+      expect(balance.address).toBe(TEST_ADDRESS)
+
+      // Verify it called the view endpoint
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/v1/view'),
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    it('should fallback to CoinStore when view function fails', async () => {
+      // First call: view function fails
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: () => Promise.resolve({}),
+        text: () => Promise.resolve('function not found'),
+      })
+
+      // Second call: CoinStore resource succeeds
       mockResponse({
         type: '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>',
         data: {
@@ -40,10 +67,19 @@ describe('AptosProvider', () => {
       expect(balance.amount).toBe('100000000')
       expect(balance.decimals).toBe(8)
       expect(balance.symbol).toBe('APT')
-      expect(balance.address).toBe(TEST_ADDRESS)
     })
 
-    it('should return 0 balance when resource not found', async () => {
+    it('should return 0 balance when both methods fail with 404', async () => {
+      // First call: view function fails
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: () => Promise.resolve({}),
+        text: () => Promise.resolve('function not found'),
+      })
+
+      // Second call: CoinStore resource not found
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,

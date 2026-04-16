@@ -291,27 +291,37 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
 }
 
 /**
+ * Network type for Cardano address generation.
+ */
+export type CardanoNetwork = 'mainnet' | 'testnet'
+
+/**
  * Generate a Shelley-era bech32 address from an ED25519 public key.
  *
- * Constructs a type-0 (base address with key-key) enterprise-style address:
- * - Header byte: 0x61 (type 6 enterprise address, mainnet)
+ * Constructs a type-6 enterprise address:
+ * - Mainnet: header byte 0x61 (type 6, network 1), HRP "addr"
+ * - Testnet: header byte 0x60 (type 6, network 0), HRP "addr_test"
  * - Payload: 28-byte blake2b-224 hash of the public key
  *
  * Uses enterprise address (type 6) for simplicity (no staking key).
- * Prefix: "addr" for mainnet.
  */
-function publicKeyToShelleyAddress(publicKey: Uint8Array): string {
+function publicKeyToShelleyAddress(publicKey: Uint8Array, network: CardanoNetwork = 'mainnet'): string {
   // blake2b-224 (28 bytes) hash of the public key
   const keyHash = blake2b(publicKey, { dkLen: 28 })
 
-  // Header byte: 0x61 = type 6 (enterprise) + network 1 (mainnet)
+  // Header byte: type 6 (enterprise) + network bit
+  // Mainnet: 0x61 (type 6, network 1)
+  // Testnet: 0x60 (type 6, network 0)
+  const headerByte = network === 'mainnet' ? 0x61 : 0x60
+  const hrp = network === 'mainnet' ? 'addr' : 'addr_test'
+
   const payload = new Uint8Array(1 + 28)
-  payload[0] = 0x61
+  payload[0] = headerByte
   payload.set(keyHash, 1)
 
-  // Encode as bech32 with "addr" prefix
+  // Encode as bech32 with appropriate HRP
   const words = bech32.toWords(payload)
-  return bech32.encode('addr', words, 1023)
+  return bech32.encode(hrp, words, 1023)
 }
 
 /**
@@ -321,6 +331,16 @@ function publicKeyToShelleyAddress(publicKey: Uint8Array): string {
  * Default HD path: m/1852'/1815'/0'/0/0 (CIP-1852)
  */
 export class CardanoSigner implements ChainSigner {
+  private readonly network: CardanoNetwork
+
+  /**
+   * @param network - 'mainnet' (default) or 'testnet'. Controls address prefix:
+   *   mainnet -> addr1... , testnet -> addr_test1...
+   */
+  constructor(network: CardanoNetwork = 'mainnet') {
+    this.network = network
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */
@@ -362,7 +382,7 @@ export class CardanoSigner implements ChainSigner {
     // Get ED25519 public key (32 bytes)
     const publicKey = ed25519.getPublicKey(pkBytes)
 
-    return publicKeyToShelleyAddress(publicKey)
+    return publicKeyToShelleyAddress(publicKey, this.network)
   }
 
   /**

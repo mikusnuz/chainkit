@@ -136,7 +136,7 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
   aptos: {
     name: 'Aptos',
     hdPath: "m/44'/637'/0'/0'/0'",
-    testnetRpc: 'https://fullnode.devnet.aptoslabs.com/v1',
+    testnetRpc: 'https://fullnode.testnet.aptoslabs.com/v1',
     decimals: 8,
     symbol: 'APT',
     explorer: 'https://explorer.aptoslabs.com',
@@ -307,7 +307,7 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
   mina: {
     name: 'Mina',
     hdPath: "m/44'/12586'/0'/0/0",
-    testnetRpc: 'https://devnet.minaprotocol.network/graphql',
+    testnetRpc: 'https://api.minascan.io/node/devnet/v1/graphql',
     decimals: 9,
     symbol: 'MINA',
     explorer: 'https://minascan.io/devnet',
