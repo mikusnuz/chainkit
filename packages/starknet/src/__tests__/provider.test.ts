@@ -28,7 +28,7 @@ function mockRpcSequence(results: unknown[]) {
     callIndex++
     return Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ jsonrpc: '2.0', id: callIndex, result }),
+      json: () => Promise.resolve({ jsonrpc: '2.0', result }),
     })
   })
 }
