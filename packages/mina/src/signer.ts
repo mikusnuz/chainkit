@@ -9,17 +9,26 @@ import {
 import type { ChainSigner, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { pallas } from '@noble/curves/pasta'
 import { sha256 } from '@noble/hashes/sha256'
-import { hmac } from '@noble/hashes/hmac'
+import { blake2b } from '@noble/hashes/blake2b'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils'
 import { base58 } from '@scure/base'
 import type { MinaSignature } from './types.js'
 import {
-  poseidonHash,
   poseidonHashWithPrefix,
-  transactionFieldsToElements,
+  packToFieldsLegacy,
+  inputToBitsLegacy,
+  HashInputLegacyOps,
+  publicKeyToInputLegacy,
+  tagToInputBits,
+  uint64ToBits,
+  uint32ToBits,
+  memoToBits,
+  LEGACY_TOKEN_ID,
   PALLAS_MODULUS,
 } from './poseidon.js'
+import type { HashInputLegacy } from './poseidon.js'
+import { PREFIXES, PALLAS_SCALAR_ORDER } from './poseidon-constants.js'
 
 /**
  * Mina address version prefix (3 bytes).
@@ -35,7 +44,7 @@ const MINA_ADDRESS_VERSION = new Uint8Array([0xcb, 0x01, 0x01])
 const MINA_HD_PATH = "m/44'/12586'/0'/0/0"
 
 /**
- * The Pallas curve order.
+ * The Pallas curve order (scalar field Fq).
  */
 const PALLAS_ORDER = pallas.CURVE.n
 
@@ -69,8 +78,6 @@ function le32ToBigint(bytes: Uint8Array): bigint {
  * Compute Mina base58check encoding.
  * Format: base58(version(3) + x_coord_LE(32) + is_odd(1) + checksum(4))
  * Checksum = first 4 bytes of SHA-256(SHA-256(version + x_coord + is_odd))
- *
- * Total payload before base58: 3 + 32 + 1 + 4 = 40 bytes
  */
 function minaBase58CheckEncode(version: Uint8Array, xCoordLE: Uint8Array, isOdd: boolean): string {
   const data = new Uint8Array(version.length + xCoordLE.length + 1)
@@ -91,9 +98,6 @@ function minaBase58CheckEncode(version: Uint8Array, xCoordLE: Uint8Array, isOdd:
 
 /**
  * Decode Mina base58check format.
- * Returns { version, xCoordLE, isOdd } or throws on invalid checksum.
- *
- * Expected total decoded length: 40 bytes (3 version + 32 x-coord + 1 parity + 4 checksum)
  */
 function minaBase58CheckDecode(encoded: string): {
   version: Uint8Array
@@ -101,12 +105,11 @@ function minaBase58CheckDecode(encoded: string): {
   isOdd: boolean
 } {
   const decoded = base58.decode(encoded)
-  // Total must be at least 3 + 32 + 1 + 4 = 40 bytes
   if (decoded.length !== 40) {
     throw new ChainKitError(ErrorCode.INVALID_ADDRESS, `Invalid address length: expected 40 bytes, got ${decoded.length}`)
   }
 
-  const data = decoded.slice(0, 36) // 3 version + 32 x-coord + 1 parity
+  const data = decoded.slice(0, 36)
   const checksum = decoded.slice(36, 40)
 
   const hash1 = sha256(data)
@@ -126,82 +129,189 @@ function minaBase58CheckDecode(encoded: string): {
   }
 }
 
+// ---- Scalar field arithmetic ----
+
+function scalarMod(a: bigint): bigint {
+  const r = a % PALLAS_ORDER
+  return r < 0n ? r + PALLAS_ORDER : r
+}
+
+function scalarAdd(a: bigint, b: bigint): bigint {
+  return scalarMod(a + b)
+}
+
+function scalarMul(a: bigint, b: bigint): bigint {
+  return scalarMod(a * b)
+}
+
+function scalarNegate(a: bigint): bigint {
+  return scalarMod(-a)
+}
+
 /**
- * Deterministic nonce generation (RFC 6979-style) for Schnorr signature on Pallas.
- * Uses HMAC-SHA256 to deterministically derive k from private key and message hash.
+ * Convert a scalar (bigint) to 255 little-endian bits.
  */
-function deterministicK(privateKey: bigint, msgHash: Uint8Array): bigint {
-  const pkBytes = new Uint8Array(numberToBytesBE(privateKey, 32))
-
-  // RFC 6979 simplified: HMAC-SHA256(privateKey || msgHash)
-  let v = new Uint8Array(32).fill(0x01)
-  let k = new Uint8Array(32).fill(0x00)
-
-  // K = HMAC_K(V || 0x00 || privKey || msgHash)
-  k = new Uint8Array(hmac(sha256, k, new Uint8Array([...v, 0x00, ...pkBytes, ...msgHash])))
-  // V = HMAC_K(V)
-  v = new Uint8Array(hmac(sha256, k, v))
-  // K = HMAC_K(V || 0x01 || privKey || msgHash)
-  k = new Uint8Array(hmac(sha256, k, new Uint8Array([...v, 0x01, ...pkBytes, ...msgHash])))
-  // V = HMAC_K(V)
-  v = new Uint8Array(hmac(sha256, k, v))
-
-  // Generate candidate
-  while (true) {
-    v = new Uint8Array(hmac(sha256, k, v))
-    const candidate = bytesToNumberBE(v) % PALLAS_ORDER
-    if (candidate > 0n) {
-      return candidate
-    }
-    k = new Uint8Array(hmac(sha256, k, new Uint8Array([...v, 0x00])))
-    v = new Uint8Array(hmac(sha256, k, v))
+function scalarToBits(s: bigint): boolean[] {
+  const bits: boolean[] = []
+  const val = scalarMod(s)
+  for (let i = 0; i < 255; i++) {
+    bits.push(((val >> BigInt(i)) & 1n) === 1n)
   }
+  return bits
 }
 
 /**
- * Hash a message for Mina Schnorr signature (SHA-256 based).
- * Used for arbitrary message signing (signMessage).
- * Transaction signing uses Poseidon hash via signTransaction.
+ * Check if a field element is even (LSB = 0).
  */
-function hashMessage(message: Uint8Array, pubKeyX: bigint, rx: bigint): Uint8Array {
-  // hash(message || pubkey.x || R.x)
-  const pubKeyXBytes = new Uint8Array(numberToBytesBE(pubKeyX, 32))
-  const rxBytes = new Uint8Array(numberToBytesBE(rx, 32))
+function fieldIsEven(x: bigint): boolean {
+  const v = ((x % PALLAS_MODULUS) + PALLAS_MODULUS) % PALLAS_MODULUS
+  return (v & 1n) === 0n
+}
 
-  const combined = new Uint8Array(message.length + 64)
-  combined.set(message, 0)
-  combined.set(pubKeyXBytes, message.length)
-  combined.set(rxBytes, message.length + 32)
+// ---- Bit/byte conversion helpers ----
 
-  return sha256(combined)
+function bitsToBytes(bits: boolean[]): number[] {
+  const bytes: number[] = []
+  for (let i = 0; i < bits.length; i += 8) {
+    let byte = 0
+    for (let j = 0; j < 8 && i + j < bits.length; j++) {
+      if (bits[i + j]) {
+        byte |= 1 << j
+      }
+    }
+    bytes.push(byte)
+  }
+  return bytes
+}
+
+function bytesToBits(bytes: number[]): boolean[] {
+  const bits: boolean[] = []
+  for (const byte of bytes) {
+    for (let j = 0; j < 8; j++) {
+      bits.push(((byte >> j) & 1) === 1)
+    }
+  }
+  return bits
 }
 
 /**
- * Mina Schnorr sign on Pallas curve.
- *
- * 1. k = deterministic nonce
- * 2. R = k * G
- * 3. e = SHA-256(message || pubkey.x || R.x)
- * 4. s = k - e * privateKey (mod order)
- * 5. Signature = { field: R.x, scalar: s }
- *
- * Note: This implements a simplified Schnorr scheme. Full Mina network
- * transaction signing requires Poseidon hash, which is a follow-up.
+ * Get network ID hash input.
+ * mainnet = 0x01, testnet/devnet = 0x00
  */
-function schnorrSign(
+function getNetworkIdByte(networkId: 'mainnet' | 'testnet'): number {
+  return networkId === 'mainnet' ? 0x01 : 0x00
+}
+
+/**
+ * Get the signature prefix for a given network.
+ */
+function signaturePrefix(networkId: 'mainnet' | 'testnet'): string {
+  return networkId === 'mainnet' ? PREFIXES.signatureMainnet : PREFIXES.signatureTestnet
+}
+
+// ---- Mina Schnorr Signature ----
+
+/**
+ * Derive a deterministic nonce (k) for legacy signing using blake2b.
+ *
+ * This matches o1js `deriveNonceLegacy`:
+ * 1. Append public key (x, y) as fields to the message input
+ * 2. Append private key bits and network ID bits
+ * 3. Convert everything to bits, then to bytes
+ * 4. Hash with blake2b(32)
+ * 5. Mask top 2 bits to fit in scalar field
+ * 6. Return as scalar
+ */
+function deriveNonceLegacy(
+  message: HashInputLegacy,
+  publicKey: { x: bigint; y: bigint },
   privateKey: bigint,
-  messageBytes: Uint8Array,
+  networkId: 'mainnet' | 'testnet',
+): bigint {
+  const pkBits = scalarToBits(privateKey)
+  const idBits = bytesToBits([getNetworkIdByte(networkId)])
+
+  const input = HashInputLegacyOps.append(message, {
+    fields: [publicKey.x, publicKey.y],
+    bits: [...pkBits, ...idBits],
+  })
+
+  const inputBits = inputToBitsLegacy(input)
+  const inputBytes = bitsToBytes(inputBits)
+
+  const hashBytes = blake2b(Uint8Array.from(inputBytes), { dkLen: 32 })
+  const mutableBytes = new Uint8Array(hashBytes)
+  // Mask top 2 bits to ensure result fits in scalar field
+  mutableBytes[mutableBytes.length - 1] &= 0x3f
+
+  // Convert from little-endian bytes to bigint
+  let result = 0n
+  for (let i = 0; i < mutableBytes.length; i++) {
+    result += BigInt(mutableBytes[i]) << BigInt(8 * i)
+  }
+
+  return scalarMod(result)
+}
+
+/**
+ * Hash a message for legacy Mina Schnorr signature using Poseidon.
+ *
+ * This matches o1js `hashMessageLegacy`:
+ * 1. Append [pk.x, pk.y, r] as fields to the message
+ * 2. Pack the combined input to field elements
+ * 3. Hash with Poseidon using the network prefix
+ *
+ * Returns the hash as a scalar (mod scalar field order).
+ */
+function hashMessageLegacy(
+  message: HashInputLegacy,
+  publicKey: { x: bigint; y: bigint },
+  r: bigint,
+  networkId: 'mainnet' | 'testnet',
+): bigint {
+  const input = HashInputLegacyOps.append(message, {
+    fields: [publicKey.x, publicKey.y, r],
+    bits: [],
+  })
+
+  const prefix = signaturePrefix(networkId)
+  const packed = packToFieldsLegacy(input)
+  return poseidonHashWithPrefix(prefix, packed)
+}
+
+/**
+ * Mina Schnorr sign on Pallas curve (legacy format).
+ *
+ * This matches o1js `signLegacy`:
+ * 1. k' = deriveNonceLegacy(message, pk, sk, networkId)
+ * 2. R = k' * G
+ * 3. k = R.y is even ? k' : -k'
+ * 4. e = hashMessageLegacy(message, pk, R.x, networkId)
+ * 5. s = k + e * sk (mod scalar order)
+ * 6. Signature = { r: R.x, s }
+ */
+function signLegacy(
+  message: HashInputLegacy,
+  privateKey: bigint,
+  networkId: 'mainnet' | 'testnet',
 ): MinaSignature {
   const pubPoint = pallas.ProjectivePoint.BASE.multiply(privateKey)
-  const pubKeyX = pubPoint.x
+  const publicKey = { x: pubPoint.x, y: pubPoint.y }
 
-  const k = deterministicK(privateKey, messageBytes)
-  const R = pallas.ProjectivePoint.BASE.multiply(k)
+  const kPrime = deriveNonceLegacy(message, publicKey, privateKey, networkId)
+  if (kPrime === 0n) {
+    throw new ChainKitError(ErrorCode.SIGNING_FAILED, 'Derived nonce is zero')
+  }
+
+  const R = pallas.ProjectivePoint.BASE.multiply(kPrime)
   const rx = R.x
+  const ry = R.y
 
-  const e = bytesToNumberBE(hashMessage(messageBytes, pubKeyX, rx)) % PALLAS_ORDER
-  let s = (k - e * privateKey) % PALLAS_ORDER
-  if (s < 0n) s += PALLAS_ORDER
+  // Negate k if R.y is odd (we want even y)
+  const k = fieldIsEven(ry) ? kPrime : scalarNegate(kPrime)
+
+  const e = hashMessageLegacy(message, publicKey, rx, networkId)
+  const s = scalarAdd(k, scalarMul(e, privateKey))
 
   return {
     field: rx.toString(),
@@ -211,136 +321,69 @@ function schnorrSign(
 
 /**
  * Decode a Mina address to extract the x-coordinate and y-parity.
- * If the address cannot be decoded (e.g., external address with different
- * checksum), falls back to hashing the address string to a field element.
  */
-function decodeMinaAddress(address: string): { x: bigint; yParity: bigint } {
+function decodeMinaAddress(address: string): { x: bigint; isOdd: boolean } {
   try {
     const { xCoordLE, isOdd } = minaBase58CheckDecode(address)
     const x = le32ToBigint(xCoordLE)
-    return { x, yParity: isOdd ? 1n : 0n }
+    return { x, isOdd }
   } catch {
     // Fallback: decode the base58 payload without checksum validation.
-    // This handles addresses from external sources that may use a
-    // slightly different checksum algorithm.
     const decoded = base58.decode(address)
     if (decoded.length >= 36) {
       const xCoordLE = decoded.slice(3, 35)
       const isOdd = decoded[35] === 0x01
       const x = le32ToBigint(xCoordLE)
-      return { x, yParity: isOdd ? 1n : 0n }
+      return { x, isOdd }
     }
-    // Last resort: hash the address string to a field element
-    const addrBytes = new TextEncoder().encode(address)
-    const hashed = sha256(addrBytes)
-    const x = bytesToNumberBE(hashed) % PALLAS_MODULUS
-    return { x, yParity: 0n }
+    throw new ChainKitError(ErrorCode.INVALID_ADDRESS, `Cannot decode address: ${address}`)
   }
 }
 
 /**
- * Encode a memo string to a field element.
- * Mina encodes memos as packed ASCII bytes into a field element.
- */
-function encodeMemoField(memo: string): bigint {
-  if (!memo) return 0n
-  let result = 0n
-  const maxLen = Math.min(memo.length, 32) // Max 32 chars
-  for (let i = 0; i < maxLen; i++) {
-    result += BigInt(memo.charCodeAt(i)) << BigInt(8 * i)
-  }
-  return result % PALLAS_MODULUS
-}
-
-/**
- * Hash transaction fields using Poseidon hash with Mina's domain prefix.
+ * Build the legacy hash input for a payment transaction.
  *
- * Mina payment transactions are hashed as:
- * Poseidon.hashWithPrefix("MinaSignatureMainnet", [...fields])
+ * Following Mina's legacy format from o1js sign-legacy.ts:
  *
- * where fields = [fee, fee_token, fee_payer_pk_x, fee_payer_pk_y_parity,
- *   nonce, valid_until, memo_hash, tag, receiver_pk_x, receiver_pk_y_parity,
- *   amount, token_id]
- */
-function hashTransactionPoseidon(
-  tx: {
-    from: string
-    to: string
-    amount: string
-    fee: string
-    nonce: number
-    memo?: string
-    validUntil?: number
-  },
-  network: 'mainnet' | 'testnet' = 'mainnet',
-): bigint {
-  const sender = decodeMinaAddress(tx.from)
-  const receiver = decodeMinaAddress(tx.to)
-
-  const prefix =
-    network === 'mainnet' ? 'MinaSignatureMainnet' : 'CodaSignature*****'
-
-  const fields = transactionFieldsToElements({
-    fee: BigInt(tx.fee),
-    feePayerPkX: sender.x,
-    feePayerPkYParity: sender.yParity,
-    nonce: BigInt(tx.nonce),
-    validUntil: BigInt(tx.validUntil ?? 4294967295),
-    memo: encodeMemoField(tx.memo ?? ''),
-    receiverPkX: receiver.x,
-    receiverPkYParity: receiver.yParity,
-    amount: BigInt(tx.amount),
-  })
-
-  return poseidonHashWithPrefix(prefix, fields)
-}
-
-/**
- * Convert a Poseidon hash (field element) to a 32-byte big-endian Uint8Array.
- */
-function poseidonHashToBytes(hash: bigint): Uint8Array {
-  return new Uint8Array(numberToBytesBE(hash, 32))
-}
-
-/**
- * Serialize transaction fields into bytes for hashing (legacy SHA-256 fallback).
+ * Common fields:
+ *   fee (uint64 bits) + fee_token_id (legacy) + fee_payer (pubkey legacy)
+ *   + nonce (uint32 bits) + valid_until (uint32 bits) + memo (bits)
  *
- * @deprecated Use hashTransactionPoseidon instead for Mina network compatibility.
+ * Body fields:
+ *   tag (3 bits) + source (pubkey legacy) + receiver (pubkey legacy)
+ *   + token_id (legacy) + amount (uint64 bits) + token_locked (1 bit = false)
  */
-function serializeTransactionLegacy(tx: {
-  from: string
-  to: string
-  amount: string
-  fee: string
-  nonce: number
-  memo?: string
-  validUntil?: number
-}): Uint8Array {
-  const encoder = new TextEncoder()
-  const parts: Uint8Array[] = []
+function buildPaymentInputLegacy(tx: {
+  feePayer: { x: bigint; isOdd: boolean }
+  source: { x: bigint; isOdd: boolean }
+  receiver: { x: bigint; isOdd: boolean }
+  fee: bigint
+  nonce: bigint
+  validUntil: bigint
+  memo: string
+  amount: bigint
+}): HashInputLegacy {
+  // Common fields
+  const common = [
+    HashInputLegacyOps.bits(uint64ToBits(tx.fee)),
+    HashInputLegacyOps.bits(LEGACY_TOKEN_ID),
+    publicKeyToInputLegacy(tx.feePayer.x, tx.feePayer.isOdd),
+    HashInputLegacyOps.bits(uint32ToBits(tx.nonce)),
+    HashInputLegacyOps.bits(uint32ToBits(tx.validUntil)),
+    HashInputLegacyOps.bits(memoToBits(tx.memo)),
+  ].reduce(HashInputLegacyOps.append)
 
-  // Serialize each field with a separator
-  parts.push(encoder.encode(tx.from))
-  parts.push(encoder.encode(tx.to))
-  parts.push(encoder.encode(tx.amount))
-  parts.push(encoder.encode(tx.fee))
-  parts.push(new Uint8Array(numberToBytesBE(BigInt(tx.nonce), 4)))
-  if (tx.memo) {
-    parts.push(encoder.encode(tx.memo))
-  }
-  if (tx.validUntil !== undefined) {
-    parts.push(new Uint8Array(numberToBytesBE(BigInt(tx.validUntil), 4)))
-  }
+  // Body fields
+  const body = [
+    HashInputLegacyOps.bits(tagToInputBits('Payment')),
+    publicKeyToInputLegacy(tx.source.x, tx.source.isOdd),
+    publicKeyToInputLegacy(tx.receiver.x, tx.receiver.isOdd),
+    HashInputLegacyOps.bits(LEGACY_TOKEN_ID),
+    HashInputLegacyOps.bits(uint64ToBits(tx.amount)),
+    HashInputLegacyOps.bits([false]), // token_locked
+  ].reduce(HashInputLegacyOps.append)
 
-  const totalLength = parts.reduce((sum, p) => sum + p.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-  for (const part of parts) {
-    result.set(part, offset)
-    offset += part.length
-  }
-
-  return sha256(result)
+  return HashInputLegacyOps.append(common, body)
 }
 
 /**
@@ -348,15 +391,13 @@ function serializeTransactionLegacy(tx: {
  *
  * Uses the Pallas curve from the Pasta curves family.
  * Addresses are base58check encoded with the B62 prefix.
- * Signatures use a custom Schnorr scheme on Pallas.
  *
- * Transaction signing uses Poseidon hash over Pallas field elements
- * with Mina-specific domain separation prefixes:
- * - "MinaSignatureMainnet" for mainnet
- * - "CodaSignature*****" for testnet
+ * Transaction signing uses Poseidon hash with Mina's exact Kimchi parameters
+ * and the legacy hash input format, matching the o1js reference implementation.
  *
- * For pre-computed Poseidon hashes (e.g., from a full Mina SDK),
- * pass tx.extra.poseidonHash as a hex string to sign directly.
+ * Signature scheme: Schnorr on Pallas
+ *   s = k + e * sk (mod scalar order)
+ * where k is derived via blake2b, e is the Poseidon hash of the transaction.
  */
 export class MinaSigner implements ChainSigner {
   private readonly network: 'mainnet' | 'testnet'
@@ -369,16 +410,10 @@ export class MinaSigner implements ChainSigner {
     return "m/44'/12586'/0'/0/0"
   }
 
-  /**
-   * Generate a new BIP39 mnemonic phrase.
-   */
   generateMnemonic(strength?: number): string {
     return generateMnemonic(strength)
   }
 
-  /**
-   * Validate a BIP39 mnemonic phrase.
-   */
   validateMnemonic(mnemonic: string): boolean {
     return validateMnemonic(mnemonic)
   }
@@ -393,7 +428,6 @@ export class MinaSigner implements ChainSigner {
     const rawKeyHex = derivePath(seed, path)
     const rawKey = bytesToNumberBE(hexToBytes(rawKeyHex))
 
-    // Take modulo Pallas curve order
     const privateKey = rawKey % PALLAS_ORDER
     if (privateKey === 0n) {
       throw new ChainKitError(
@@ -407,12 +441,6 @@ export class MinaSigner implements ChainSigner {
 
   /**
    * Get the Mina address (B62...) from a private key.
-   *
-   * 1. Multiply private key by generator point on Pallas curve
-   * 2. Get x-coordinate of the public key point
-   * 3. Check parity of y-coordinate, and if y is odd, negate the point
-   *    (Mina uses even-y convention for addresses)
-   * 4. Encode: base58check(0xCB || x_coord_le_bytes || checksum)
    */
   getAddress(privateKey: string): string {
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
@@ -437,10 +465,7 @@ export class MinaSigner implements ChainSigner {
     const x = pubPoint.x
     const y = pubPoint.y
 
-    // Check parity of y-coordinate
     const isOdd = y % 2n === 1n
-
-    // Encode x-coordinate as 32 bytes little-endian
     const xBytes = bigintToLE32(x)
 
     return minaBase58CheckEncode(MINA_ADDRESS_VERSION, xBytes, isOdd)
@@ -448,14 +473,12 @@ export class MinaSigner implements ChainSigner {
 
   /**
    * Validate a Mina address.
-   * Checks for B62 prefix, proper base58check encoding, and correct version byte.
    */
   validateAddress(address: string): boolean {
     if (!address.startsWith('B62')) return false
 
     try {
       const { version, xCoordLE } = minaBase58CheckDecode(address)
-      // Verify version prefix matches
       if (version[0] !== MINA_ADDRESS_VERSION[0]) return false
       if (version[1] !== MINA_ADDRESS_VERSION[1]) return false
       if (version[2] !== MINA_ADDRESS_VERSION[2]) return false
@@ -467,14 +490,10 @@ export class MinaSigner implements ChainSigner {
   }
 
   /**
-   * Sign a Mina transaction using Schnorr signature on Pallas curve.
+   * Sign a Mina payment transaction using Schnorr signature on Pallas curve.
    *
-   * Uses Poseidon hash over Pallas field elements for transaction hashing,
-   * which is required by the Mina network.
-   *
-   * For pre-computed Poseidon hashes, pass tx.extra.poseidonHash as a
-   * hex string (32 bytes). This bypasses the built-in Poseidon computation
-   * and signs the provided hash directly.
+   * Uses the legacy hash input format and Poseidon hash with Mina's exact
+   * Kimchi parameters, matching the o1js reference implementation.
    *
    * Returns a JSON string containing { signature: { field, scalar }, payment }.
    */
@@ -493,29 +512,30 @@ export class MinaSigner implements ChainSigner {
     const from = tx.from ?? this.getAddress(privateKey)
     const to = tx.to
     const amount = tx.value ?? tx.amount ?? '0'
-    const fee = tx.fee?.fee ?? '10000000' // default 0.01 MINA
+    const fee = tx.fee?.fee ?? '10000000'
     const nonce = tx.nonce ?? 0
     const memo = tx.memo ?? ''
     const validUntil = (tx.extra?.validUntil as number) ?? 4294967295
+    const network = (tx.extra?.network as 'mainnet' | 'testnet') ?? this.network
 
-    let txHashBytes: Uint8Array
+    // Decode sender and receiver addresses
+    const sender = decodeMinaAddress(from)
+    const receiver = decodeMinaAddress(to)
 
-    if (tx.extra?.poseidonHash) {
-      // Use pre-computed Poseidon hash directly
-      const hashHex = (tx.extra.poseidonHash as string).startsWith('0x')
-        ? (tx.extra.poseidonHash as string).slice(2)
-        : (tx.extra.poseidonHash as string)
-      txHashBytes = hexToBytes(hashHex)
-    } else {
-      // Compute Poseidon hash of transaction fields
-      const poseidonResult = hashTransactionPoseidon(
-        { from, to, amount, fee, nonce, memo, validUntil },
-        this.network,
-      )
-      txHashBytes = poseidonHashToBytes(poseidonResult)
-    }
+    // Build legacy hash input
+    const input = buildPaymentInputLegacy({
+      feePayer: sender,
+      source: sender,
+      receiver,
+      fee: BigInt(fee),
+      nonce: BigInt(nonce),
+      validUntil: BigInt(validUntil),
+      memo,
+      amount: BigInt(amount),
+    })
 
-    const signature = schnorrSign(pk, txHashBytes)
+    // Sign using the legacy Schnorr scheme
+    const signature = signLegacy(input, pk, network)
 
     return JSON.stringify({
       signature,
@@ -534,13 +554,9 @@ export class MinaSigner implements ChainSigner {
   /**
    * Sign a pre-computed transaction hash directly.
    *
-   * This is useful when the Poseidon hash has been computed externally
-   * (e.g., by a full Mina SDK or wallet). The hash should be a Pallas
-   * field element represented as a 32-byte big-endian hex string.
-   *
-   * @param privateKey - The private key hex string
-   * @param hash - The pre-computed Poseidon hash as a hex string
-   * @returns JSON string containing { field, scalar } signature
+   * This is useful when the Poseidon hash has been computed externally.
+   * The hash should be a Pallas field element represented as a decimal string
+   * or 32-byte big-endian hex string.
    */
   async signTransactionHash(privateKey: string, hash: string): Promise<string> {
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
@@ -553,15 +569,46 @@ export class MinaSigner implements ChainSigner {
       )
     }
 
-    const hashHex = hash.startsWith('0x') ? hash.slice(2) : hash
-    const hashBytes = hexToBytes(hashHex)
-    const signature = schnorrSign(pk, hashBytes)
+    // Interpret hash as a field element (the "e" in the signature)
+    let e: bigint
+    if (hash.startsWith('0x') || /^[0-9a-fA-F]{64}$/.test(hash)) {
+      const hashHex = hash.startsWith('0x') ? hash.slice(2) : hash
+      e = bytesToNumberBE(hexToBytes(hashHex))
+    } else {
+      e = BigInt(hash)
+    }
 
-    return JSON.stringify(signature)
+    // Compute R = kPrime * G with a deterministic nonce
+    const pubPoint = pallas.ProjectivePoint.BASE.multiply(pk)
+    const hashBytes = new Uint8Array(numberToBytesBE(e, 32))
+    const nonceInput = blake2b(
+      Uint8Array.from([...hashBytes, ...new Uint8Array(numberToBytesBE(pk, 32))]),
+      { dkLen: 32 },
+    )
+    const mutableNonce = new Uint8Array(nonceInput)
+    mutableNonce[mutableNonce.length - 1] &= 0x3f
+    let kPrime = 0n
+    for (let i = 0; i < mutableNonce.length; i++) {
+      kPrime += BigInt(mutableNonce[i]) << BigInt(8 * i)
+    }
+    kPrime = scalarMod(kPrime)
+    if (kPrime === 0n) kPrime = 1n
+
+    const R = pallas.ProjectivePoint.BASE.multiply(kPrime)
+    const k = fieldIsEven(R.y) ? kPrime : scalarNegate(kPrime)
+    const s = scalarAdd(k, scalarMul(e, pk))
+
+    return JSON.stringify({
+      field: R.x.toString(),
+      scalar: s.toString(),
+    })
   }
 
   /**
    * Sign an arbitrary message using Schnorr signature on Pallas curve.
+   *
+   * Uses Poseidon hash with the legacy format for message hashing,
+   * matching Mina's message signing convention.
    *
    * Returns a JSON string containing { field, scalar } signature.
    */
@@ -580,9 +627,16 @@ export class MinaSigner implements ChainSigner {
     const msgBytes =
       typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with SHA-256 first to get a fixed-size input
-    const msgHash = sha256(msgBytes)
-    const signature = schnorrSign(pk, msgHash)
+    // Convert message to legacy hash input (as bits)
+    const bits: boolean[] = []
+    for (const byte of msgBytes) {
+      for (let j = 0; j < 8; j++) {
+        bits.push(((byte >> j) & 1) === 1)
+      }
+    }
+    const input: HashInputLegacy = { fields: [], bits }
+
+    const signature = signLegacy(input, pk, this.network)
 
     return JSON.stringify(signature)
   }

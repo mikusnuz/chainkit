@@ -1,6 +1,23 @@
 export { MinaSigner } from './signer.js'
 export { MinaProvider } from './provider.js'
-export { poseidonHash, poseidonHashWithPrefix, transactionFieldsToElements, PALLAS_MODULUS } from './poseidon.js'
+export {
+  poseidonHash,
+  poseidonHashWithPrefix,
+  poseidonUpdate,
+  poseidonInitialState,
+  prefixToField,
+  packToFieldsLegacy,
+  inputToBitsLegacy,
+  HashInputLegacyOps,
+  publicKeyToInputLegacy,
+  tagToInputBits,
+  uint64ToBits,
+  uint32ToBits,
+  memoToBits,
+  LEGACY_TOKEN_ID,
+  PALLAS_MODULUS,
+} from './poseidon.js'
+export type { HashInputLegacy } from './poseidon.js'
 export type { MinaTransactionData, MinaSignature } from './types.js'
 
 import { MinaSigner } from './signer.js'
