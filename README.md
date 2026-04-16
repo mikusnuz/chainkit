@@ -4,12 +4,9 @@ Cross-chain wallet SDK. One unified API for 30 blockchains -- wallet creation, a
 
 Zero external chain SDK dependencies. Pure JavaScript crypto via @noble/@scure.
 
-<p align="center">
-  <a href="https://mikusnuz.github.io/chainkit/"><img src="https://img.shields.io/badge/PLAYGROUND-Try%20it%20live-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Playground" /></a>
-  <a href="https://www.npmjs.com/package/chainkit-sdk"><img src="https://img.shields.io/npm/v/chainkit-sdk?style=for-the-badge&logo=npm&logoColor=white&label=npm" alt="npm" /></a>
-  <img src="https://img.shields.io/badge/chains-30-green?style=for-the-badge" alt="30 chains" />
-  <img src="https://img.shields.io/badge/dependencies-0%20chain%20SDKs-orange?style=for-the-badge" alt="zero deps" />
-</p>
+[![Playground](https://img.shields.io/badge/PLAYGROUND-Try%20it%20live-blue?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mikusnuz.github.io/chainkit/)
+[![Chains](https://img.shields.io/badge/chains-30-green?style=for-the-badge)](https://github.com/mikusnuz/chainkit#supported-chains--exchange-coverage)
+[![Zero Deps](https://img.shields.io/badge/chain%20SDK%20deps-0-orange?style=for-the-badge)](https://github.com/mikusnuz/chainkit#security)
 
 ## Installation
 
