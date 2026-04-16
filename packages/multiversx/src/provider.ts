@@ -25,7 +25,7 @@ import type {
  * Configuration for the MultiversX provider.
  */
 export interface MultiversXProviderConfig {
-  /** Base URL for the MultiversX API (e.g., "https://api.multiversx.com" or "https://testnet-api.multiversx.com") */
+  /** Base URL for the MultiversX API (e.g., "https://api.multiversx.com" or "https://devnet-api.multiversx.com") */
   apiUrl: string
   /** Request timeout in milliseconds (default: 10000) */
   timeout?: number

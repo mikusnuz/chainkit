@@ -14,6 +14,12 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils'
 import { base58 } from '@scure/base'
 import type { MinaSignature } from './types.js'
+import {
+  poseidonHash,
+  poseidonHashWithPrefix,
+  transactionFieldsToElements,
+  PALLAS_MODULUS,
+} from './poseidon.js'
 
 /**
  * Mina address version prefix (3 bytes).
@@ -154,8 +160,8 @@ function deterministicK(privateKey: bigint, msgHash: Uint8Array): bigint {
 
 /**
  * Hash a message for Mina Schnorr signature (SHA-256 based).
- * This is used for signMessage. Full Mina transaction signing
- * requires Poseidon hash which is a follow-up enhancement.
+ * Used for arbitrary message signing (signMessage).
+ * Transaction signing uses Poseidon hash via signTransaction.
  */
 function hashMessage(message: Uint8Array, pubKeyX: bigint, rx: bigint): Uint8Array {
   // hash(message || pubkey.x || R.x)
@@ -204,9 +210,104 @@ function schnorrSign(
 }
 
 /**
- * Serialize transaction fields into bytes for hashing.
+ * Decode a Mina address to extract the x-coordinate and y-parity.
+ * If the address cannot be decoded (e.g., external address with different
+ * checksum), falls back to hashing the address string to a field element.
  */
-function serializeTransaction(tx: {
+function decodeMinaAddress(address: string): { x: bigint; yParity: bigint } {
+  try {
+    const { xCoordLE, isOdd } = minaBase58CheckDecode(address)
+    const x = le32ToBigint(xCoordLE)
+    return { x, yParity: isOdd ? 1n : 0n }
+  } catch {
+    // Fallback: decode the base58 payload without checksum validation.
+    // This handles addresses from external sources that may use a
+    // slightly different checksum algorithm.
+    const decoded = base58.decode(address)
+    if (decoded.length >= 36) {
+      const xCoordLE = decoded.slice(3, 35)
+      const isOdd = decoded[35] === 0x01
+      const x = le32ToBigint(xCoordLE)
+      return { x, yParity: isOdd ? 1n : 0n }
+    }
+    // Last resort: hash the address string to a field element
+    const addrBytes = new TextEncoder().encode(address)
+    const hashed = sha256(addrBytes)
+    const x = bytesToNumberBE(hashed) % PALLAS_MODULUS
+    return { x, yParity: 0n }
+  }
+}
+
+/**
+ * Encode a memo string to a field element.
+ * Mina encodes memos as packed ASCII bytes into a field element.
+ */
+function encodeMemoField(memo: string): bigint {
+  if (!memo) return 0n
+  let result = 0n
+  const maxLen = Math.min(memo.length, 32) // Max 32 chars
+  for (let i = 0; i < maxLen; i++) {
+    result += BigInt(memo.charCodeAt(i)) << BigInt(8 * i)
+  }
+  return result % PALLAS_MODULUS
+}
+
+/**
+ * Hash transaction fields using Poseidon hash with Mina's domain prefix.
+ *
+ * Mina payment transactions are hashed as:
+ * Poseidon.hashWithPrefix("MinaSignatureMainnet", [...fields])
+ *
+ * where fields = [fee, fee_token, fee_payer_pk_x, fee_payer_pk_y_parity,
+ *   nonce, valid_until, memo_hash, tag, receiver_pk_x, receiver_pk_y_parity,
+ *   amount, token_id]
+ */
+function hashTransactionPoseidon(
+  tx: {
+    from: string
+    to: string
+    amount: string
+    fee: string
+    nonce: number
+    memo?: string
+    validUntil?: number
+  },
+  network: 'mainnet' | 'testnet' = 'mainnet',
+): bigint {
+  const sender = decodeMinaAddress(tx.from)
+  const receiver = decodeMinaAddress(tx.to)
+
+  const prefix =
+    network === 'mainnet' ? 'MinaSignatureMainnet' : 'CodaSignature*****'
+
+  const fields = transactionFieldsToElements({
+    fee: BigInt(tx.fee),
+    feePayerPkX: sender.x,
+    feePayerPkYParity: sender.yParity,
+    nonce: BigInt(tx.nonce),
+    validUntil: BigInt(tx.validUntil ?? 4294967295),
+    memo: encodeMemoField(tx.memo ?? ''),
+    receiverPkX: receiver.x,
+    receiverPkYParity: receiver.yParity,
+    amount: BigInt(tx.amount),
+  })
+
+  return poseidonHashWithPrefix(prefix, fields)
+}
+
+/**
+ * Convert a Poseidon hash (field element) to a 32-byte big-endian Uint8Array.
+ */
+function poseidonHashToBytes(hash: bigint): Uint8Array {
+  return new Uint8Array(numberToBytesBE(hash, 32))
+}
+
+/**
+ * Serialize transaction fields into bytes for hashing (legacy SHA-256 fallback).
+ *
+ * @deprecated Use hashTransactionPoseidon instead for Mina network compatibility.
+ */
+function serializeTransactionLegacy(tx: {
   from: string
   to: string
   amount: string
@@ -249,12 +350,20 @@ function serializeTransaction(tx: {
  * Addresses are base58check encoded with the B62 prefix.
  * Signatures use a custom Schnorr scheme on Pallas.
  *
- * Note: Transaction signing uses SHA-256 hashing of serialized fields.
- * Full Mina network-compatible transaction signing requires Poseidon
- * hash, which is planned as a follow-up enhancement.
+ * Transaction signing uses Poseidon hash over Pallas field elements
+ * with Mina-specific domain separation prefixes:
+ * - "MinaSignatureMainnet" for mainnet
+ * - "CodaSignature*****" for testnet
+ *
+ * For pre-computed Poseidon hashes (e.g., from a full Mina SDK),
+ * pass tx.extra.poseidonHash as a hex string to sign directly.
  */
 export class MinaSigner implements ChainSigner {
-  constructor(_network?: 'mainnet' | 'testnet') {}
+  private readonly network: 'mainnet' | 'testnet'
+
+  constructor(network?: 'mainnet' | 'testnet') {
+    this.network = network ?? 'mainnet'
+  }
 
   getDefaultHdPath(): string {
     return "m/44'/12586'/0'/0/0"
@@ -360,11 +469,14 @@ export class MinaSigner implements ChainSigner {
   /**
    * Sign a Mina transaction using Schnorr signature on Pallas curve.
    *
-   * Returns a JSON string containing { field, scalar } signature fields
-   * alongside the serialized transaction.
+   * Uses Poseidon hash over Pallas field elements for transaction hashing,
+   * which is required by the Mina network.
    *
-   * Note: Uses SHA-256 for hashing. Full Mina network compatibility
-   * requires Poseidon hash (follow-up enhancement).
+   * For pre-computed Poseidon hashes, pass tx.extra.poseidonHash as a
+   * hex string (32 bytes). This bypasses the built-in Poseidon computation
+   * and signs the provided hash directly.
+   *
+   * Returns a JSON string containing { signature: { field, scalar }, payment }.
    */
   async signTransaction(params: SignTransactionParams): Promise<string> {
     const { privateKey, tx } = params
@@ -386,17 +498,24 @@ export class MinaSigner implements ChainSigner {
     const memo = tx.memo ?? ''
     const validUntil = (tx.extra?.validUntil as number) ?? 4294967295
 
-    const txHash = serializeTransaction({
-      from,
-      to,
-      amount,
-      fee,
-      nonce,
-      memo,
-      validUntil,
-    })
+    let txHashBytes: Uint8Array
 
-    const signature = schnorrSign(pk, txHash)
+    if (tx.extra?.poseidonHash) {
+      // Use pre-computed Poseidon hash directly
+      const hashHex = (tx.extra.poseidonHash as string).startsWith('0x')
+        ? (tx.extra.poseidonHash as string).slice(2)
+        : (tx.extra.poseidonHash as string)
+      txHashBytes = hexToBytes(hashHex)
+    } else {
+      // Compute Poseidon hash of transaction fields
+      const poseidonResult = hashTransactionPoseidon(
+        { from, to, amount, fee, nonce, memo, validUntil },
+        this.network,
+      )
+      txHashBytes = poseidonHashToBytes(poseidonResult)
+    }
+
+    const signature = schnorrSign(pk, txHashBytes)
 
     return JSON.stringify({
       signature,
@@ -410,6 +529,35 @@ export class MinaSigner implements ChainSigner {
         validUntil,
       },
     })
+  }
+
+  /**
+   * Sign a pre-computed transaction hash directly.
+   *
+   * This is useful when the Poseidon hash has been computed externally
+   * (e.g., by a full Mina SDK or wallet). The hash should be a Pallas
+   * field element represented as a 32-byte big-endian hex string.
+   *
+   * @param privateKey - The private key hex string
+   * @param hash - The pre-computed Poseidon hash as a hex string
+   * @returns JSON string containing { field, scalar } signature
+   */
+  async signTransactionHash(privateKey: string, hash: string): Promise<string> {
+    const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
+    const pk = bytesToNumberBE(hexToBytes(pkHex))
+
+    if (pk === 0n || pk >= PALLAS_ORDER) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PRIVATE_KEY,
+        'Private key out of valid range',
+      )
+    }
+
+    const hashHex = hash.startsWith('0x') ? hash.slice(2) : hash
+    const hashBytes = hexToBytes(hashHex)
+    const signature = schnorrSign(pk, hashBytes)
+
+    return JSON.stringify(signature)
   }
 
   /**

@@ -262,10 +262,10 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
   multiversx: {
     name: 'MultiversX',
     hdPath: "m/44'/508'/0'/0'/0'",
-    testnetRpc: 'https://testnet-api.multiversx.com',
+    testnetRpc: 'https://devnet-api.multiversx.com',
     decimals: 18,
     symbol: 'EGLD',
-    explorer: 'https://testnet-explorer.multiversx.com',
+    explorer: 'https://devnet-explorer.multiversx.com',
     group: 'ED25519',
   },
   iota: {

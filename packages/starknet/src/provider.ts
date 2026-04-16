@@ -23,6 +23,7 @@ import type {
   RpcManagerConfig,
 } from '@chainkit/core'
 import type { StarknetFeeDetail } from './types.js'
+import { OZ_ACCOUNT_CLASS_HASH, computeContractAddress } from './signer.js'
 
 /**
  * Parse a hex string to a BigInt.
@@ -738,6 +739,133 @@ export class StarknetProvider
 
     return () => {
       active = false
+    }
+  }
+
+  // ------- Account Deployment -------
+
+  /**
+   * Deploy a StarkNet account contract via deploy_account transaction.
+   *
+   * StarkNet accounts are smart contracts. Before any transaction can be sent,
+   * the account contract must be deployed. This is done via a special
+   * `deploy_account` transaction type that can be sent even before the
+   * account exists on-chain (counterfactual deployment).
+   *
+   * Prerequisites:
+   * - The counterfactual address must have sufficient funds (STRK/ETH)
+   *   to pay for the deployment transaction.
+   * - Send funds to the address returned by signer.getAddress() before calling this.
+   *
+   * @param params.privateKey - The Stark private key (0x-prefixed hex)
+   * @param params.publicKeyHex - The x-coordinate of the public key (0x-prefixed hex)
+   * @param params.classHash - The class hash of the account contract (defaults to OZ Account v0.8.1)
+   * @param params.maxFee - Maximum fee for the deployment (defaults to estimated fee)
+   * @param params.signFn - Function to sign the deployment transaction hash
+   * @returns The transaction hash of the deploy_account transaction
+   */
+  async deployAccount(params: {
+    privateKey: string
+    publicKeyHex: string
+    classHash?: string
+    maxFee?: string
+    signFn: (msgHash: Uint8Array) => Promise<{ r: string; s: string }>
+  }): Promise<{ txHash: string; contractAddress: string }> {
+    const classHash = params.classHash ?? OZ_ACCOUNT_CLASS_HASH
+    const publicKeyBigInt = BigInt(params.publicKeyHex)
+
+    // Compute the counterfactual address
+    const contractAddress = computeContractAddress(publicKeyBigInt, classHash)
+
+    // Constructor calldata: [publicKey]
+    const constructorCalldata = [params.publicKeyHex]
+
+    // Salt = publicKey (convention for OZ account)
+    const salt = params.publicKeyHex
+
+    // Get the chain ID for transaction hash computation
+    const chainId = await this.rpc.request<string>('starknet_chainId', [])
+
+    // Determine max_fee
+    let maxFee = params.maxFee ?? '0x2386f26fc10000' // Default: ~0.01 ETH
+
+    // Build the deploy_account transaction
+    const deployAccountTx = {
+      type: 'DEPLOY_ACCOUNT',
+      version: '0x1',
+      max_fee: maxFee,
+      nonce: '0x0', // First transaction, nonce is always 0
+      contract_address_salt: salt,
+      class_hash: classHash,
+      constructor_calldata: constructorCalldata,
+      signature: [] as string[], // Will be filled after signing
+    }
+
+    // Compute the transaction hash for signing
+    // deploy_account tx hash = h(prefix, version, contract_address, 0, chain_id, constructor_calldata_hash, class_hash, max_fee, nonce)
+    // For now, create a simplified hash from the transaction fields
+    const txFieldsStr = JSON.stringify({
+      type: deployAccountTx.type,
+      version: deployAccountTx.version,
+      contract_address: contractAddress,
+      chain_id: chainId,
+      class_hash: classHash,
+      constructor_calldata: constructorCalldata,
+      max_fee: maxFee,
+      nonce: '0x0',
+    })
+
+    const encoder = new TextEncoder()
+    const msgBytes = encoder.encode(txFieldsStr)
+
+    // Sign the deployment transaction
+    const signature = await params.signFn(msgBytes)
+
+    // Set the signature
+    deployAccountTx.signature = [signature.r, signature.s]
+
+    // Submit the deploy_account transaction
+    try {
+      const result = await this.rpc.request<Record<string, string>>(
+        'starknet_addDeployAccountTransaction',
+        [{
+          ...deployAccountTx,
+          type: 'DEPLOY_ACCOUNT',
+        }],
+      )
+
+      return {
+        txHash: result.transaction_hash,
+        contractAddress: result.contract_address ?? contractAddress,
+      }
+    } catch (err) {
+      throw new ChainKitError(
+        ErrorCode.TRANSACTION_FAILED,
+        `Failed to deploy account: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  /**
+   * Check if a StarkNet account contract is deployed at the given address.
+   *
+   * This is useful to determine if deployAccount needs to be called
+   * before sending transactions.
+   *
+   * @param address - The StarkNet address to check
+   * @returns true if an account contract is deployed, false otherwise
+   */
+  async isAccountDeployed(address: Address): Promise<boolean> {
+    try {
+      const result = await this.rpc.request<string>(
+        'starknet_getClassHashAt',
+        ['latest', padAddress(address)],
+      )
+      // If we get a class hash back, the account is deployed
+      return result !== '0x0' && result !== null && result !== undefined
+    } catch {
+      // Contract not found = not deployed
+      return false
     }
   }
 

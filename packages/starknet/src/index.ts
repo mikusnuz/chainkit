@@ -1,4 +1,4 @@
-export { StarknetSigner } from './signer.js'
+export { StarknetSigner, computeContractAddress, OZ_ACCOUNT_CLASS_HASH } from './signer.js'
 export { StarknetProvider } from './provider.js'
 export type { StarknetTransactionData, StarknetFeeDetail } from './types.js'
 
