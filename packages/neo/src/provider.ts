@@ -434,9 +434,20 @@ export class NeoProvider
   async broadcastTransaction(signedTx: HexString): Promise<TxHash> {
     const raw = signedTx.startsWith('0x') ? signedTx.slice(2) : signedTx
 
+    // Neo-GO expects base64-encoded raw transaction, not hex
+    const hexBytes = new Uint8Array(raw.length / 2)
+    for (let i = 0; i < hexBytes.length; i++) {
+      hexBytes[i] = parseInt(raw.slice(i * 2, i * 2 + 2), 16)
+    }
+    let binary = ''
+    for (let i = 0; i < hexBytes.length; i++) {
+      binary += String.fromCharCode(hexBytes[i])
+    }
+    const base64Tx = btoa(binary)
+
     const result = await this.rpc.request<Record<string, unknown>>(
       'sendrawtransaction',
-      [raw],
+      [base64Tx],
     )
 
     // Neo N3 returns { hash: "0x..." } on success
@@ -460,8 +471,10 @@ export class NeoProvider
       this.rpc.request<number>('getblockcount', []),
     ])
 
-    const network = version.network as number | undefined
-    const neoVersion = version.neoversion as string | undefined
+    // Neo-GO returns network magic inside protocol.network
+    const protocol = version.protocol as Record<string, unknown> | undefined
+    const network = (protocol?.network as number | undefined) ?? (version.network as number | undefined)
+    const neoVersion = (version.useragent as string | undefined) ?? (version.neoversion as string | undefined)
 
     // Detect testnet from network magic
     const isTestnet = network === 894710606 // Neo3 testnet magic

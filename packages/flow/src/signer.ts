@@ -8,6 +8,7 @@ import {
 import type { ChainSigner, HexString, Address, UnsignedTx, SignTransactionParams, SignMessageParams } from '@chainkit/core'
 import { p256 } from '@noble/curves/p256'
 import { sha256 } from '@noble/hashes/sha256'
+import { sha3_256 } from '@noble/hashes/sha3'
 import { sha512 } from '@noble/hashes/sha512'
 import { hmac } from '@noble/hashes/hmac'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
@@ -221,6 +222,8 @@ function encodeBigEndianLength(length: number): Uint8Array {
  * Convert a number to an 8-byte big-endian Uint8Array.
  */
 function numberToUint64BE(value: number): Uint8Array {
+  // Flow encodes 0 as empty bytes in RLP
+  if (value === 0) return new Uint8Array(0)
   const buf = new Uint8Array(8)
   let v = value
   for (let i = 7; i >= 0; i--) {
@@ -405,6 +408,7 @@ export class FlowSigner implements ChainSigner {
    *      - referenceBlockId: string (recent block ID hex)
    *      - fungibleTokenAddress: string (FungibleToken contract address for the network)
    *      - flowTokenAddress: string (FlowToken contract address for the network)
+   *      - hashAlgorithm: string ("SHA3_256" | "SHA2_256", default: "SHA3_256")
    *
    * Returns the ECDSA P-256 signature as a hex string (r || s, each 32 bytes)
    * in raw mode, or a JSON string containing the full transaction body ready
@@ -447,6 +451,10 @@ export class FlowSigner implements ChainSigner {
     const referenceBlockId = tx.extra?.referenceBlockId as string
     const fungibleTokenAddr = tx.extra?.fungibleTokenAddress as string ?? '0xf233dcee88fe0abe'
     const flowTokenAddr = tx.extra?.flowTokenAddress as string ?? '0x1654653399040a61'
+    // Flow accounts specify a hashing algorithm for their keys.
+    // SHA3_256 is the default for most Flow accounts.
+    const hashAlgorithm = (tx.extra?.hashAlgorithm as string) ?? 'SHA3_256'
+    const hashFn = hashAlgorithm === 'SHA2_256' ? sha256 : sha3_256
 
     if (!referenceBlockId) {
       throw new ChainKitError(
@@ -492,16 +500,16 @@ export class FlowSigner implements ChainSigner {
     const argsBase64 = args.map(a => bytesToBase64(new TextEncoder().encode(JSON.stringify(a))))
 
     // RLP encode the payload for signing
+    // Flow's canonical form is a FLAT structure (not nested for proposal key):
+    // [script, arguments, refBlockID, gasLimit, proposalKeyAddress, proposalKeyID, proposalKeySeqNum, payer, authorizers]
     const payloadItems: RlpItem = [
       new TextEncoder().encode(script),                                  // script
       args.map(a => new TextEncoder().encode(JSON.stringify(a))),       // arguments
       hexToBytes(stripHexPrefix(referenceBlockId)),                      // reference block ID
       numberToUint64BE(gasLimit),                                        // gas limit
-      [                                                                  // proposal key
-        hexToBytes(senderAddress.padStart(16, '0')),                    // address (8 bytes)
-        numberToUint64BE(keyIndex),                                      // key index
-        numberToUint64BE(sequenceNumber),                                // sequence number
-      ],
+      hexToBytes(senderAddress.padStart(16, '0')),                      // proposal key address (8 bytes)
+      numberToUint64BE(keyIndex),                                        // proposal key index
+      numberToUint64BE(sequenceNumber),                                  // proposal key sequence number
       hexToBytes(senderAddress.padStart(16, '0')),                      // payer
       [hexToBytes(senderAddress.padStart(16, '0'))],                    // authorizers
     ]
@@ -512,28 +520,20 @@ export class FlowSigner implements ChainSigner {
     const domainTag = rightPadTo32(new TextEncoder().encode('FLOW-V0.0-transaction'))
     const payloadMessage = concatBytes(domainTag, payloadEncoded)
 
-    // Sign the payload (payload signature for single-signer = envelope signer)
-    const payloadHash = sha256(payloadMessage)
-    const payloadSig = p256.sign(payloadHash, pkBytes)
-    const payloadSigHex = payloadSig.r.toString(16).padStart(64, '0') + payloadSig.s.toString(16).padStart(64, '0')
-
-    // Build the envelope (payload + payload signatures)
+    // For single-signer (proposer == payer == authorizer), payload_signatures
+    // are empty and only the envelope signature is needed. The payer signs the
+    // envelope which wraps the payload + empty payload_signatures.
+    // Build the envelope (payload + empty payload signatures)
     const envelopeItems: RlpItem = [
       payloadItems,                                                      // payload
-      [                                                                  // payload signatures
-        [
-          hexToBytes(senderAddress.padStart(16, '0')),                  // signer address
-          numberToUint64BE(keyIndex),                                    // key index
-          hexToBytes(payloadSigHex),                                    // signature
-        ],
-      ],
+      [],                                                                // payload signatures (empty for single-signer)
     ]
 
     const envelopeEncoded = rlpEncode(envelopeItems)
 
-    // Sign the envelope
+    // Sign the envelope using the account's hashing algorithm
     const envelopeMessage = concatBytes(domainTag, envelopeEncoded)
-    const envelopeHash = sha256(envelopeMessage)
+    const envelopeHash = hashFn(envelopeMessage)
     const envelopeSig = p256.sign(envelopeHash, pkBytes)
     const envelopeSigHex = envelopeSig.r.toString(16).padStart(64, '0') + envelopeSig.s.toString(16).padStart(64, '0')
 
@@ -550,13 +550,7 @@ export class FlowSigner implements ChainSigner {
       },
       payer: senderAddress.padStart(16, '0'),
       authorizers: [senderAddress.padStart(16, '0')],
-      payload_signatures: [
-        {
-          address: senderAddress.padStart(16, '0'),
-          key_index: keyIndex.toString(),
-          signature: bytesToBase64(hexToBytes(payloadSigHex)),
-        },
-      ],
+      payload_signatures: [],
       envelope_signatures: [
         {
           address: senderAddress.padStart(16, '0'),
