@@ -427,6 +427,12 @@ function pubkeyToAddress(publicKey: Uint8Array, hrp: string = IOTA_HRP): Address
  * Default HD path: m/44'/4218'/0'/0'/0' (IOTA coin type 4218, all hardened per SLIP-0010)
  */
 export class IotaSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/4218'/0'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

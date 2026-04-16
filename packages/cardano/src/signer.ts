@@ -342,6 +342,14 @@ export class CardanoSigner implements ChainSigner {
   }
 
   /**
+   * Get the default CIP-1852 HD derivation path for Cardano.
+   * The path is the same for both mainnet and testnet.
+   */
+  getDefaultHdPath(): string {
+    return "m/1852'/1815'/0'/0/0"
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

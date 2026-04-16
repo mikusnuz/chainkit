@@ -375,6 +375,12 @@ function bigintToBytes(value: string): Uint8Array {
  * and Filecoin transaction message construction.
  */
 export class FilecoinSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/461'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

@@ -89,6 +89,12 @@ function computeTransactionHash(txParams: Record<string, unknown>): Uint8Array {
  * Addresses use the `hx` prefix instead of Ethereum's `0x`.
  */
 export class IconSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/4801074'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

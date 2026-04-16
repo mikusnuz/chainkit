@@ -496,6 +496,21 @@ function resolveContractHash(asset: string): Uint8Array {
  */
 export class NeoSigner implements ChainSigner {
   /**
+   * @param _network - Accepted for interface consistency. Neo N3 address format
+   *   is the same for mainnet and testnet; network magic is set per-transaction.
+   */
+  constructor(_network?: 'mainnet' | 'testnet') {
+    // Network does not affect Neo address generation
+  }
+
+  /**
+   * Get the default BIP44 HD derivation path for Neo.
+   */
+  getDefaultHdPath(): string {
+    return "m/44'/888'/0'/0/0"
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

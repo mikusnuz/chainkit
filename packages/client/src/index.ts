@@ -4,6 +4,7 @@ export type {
   ChainDefinition,
   ChainConfig,
   ChainsConfig,
+  NetworkType,
   ReadOnlyChainInstance,
   FullChainInstance,
   SendParams,

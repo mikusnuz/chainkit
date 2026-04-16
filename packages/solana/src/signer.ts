@@ -121,6 +121,12 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
  * Uses ED25519 keys with SLIP-0010 derivation and base58 addresses.
  */
 export class SolanaSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/501'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

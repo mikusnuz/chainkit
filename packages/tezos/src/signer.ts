@@ -414,6 +414,12 @@ function encodeSignature(signature: Uint8Array): string {
  * Default HD path: m/44'/1729'/0'/0'
  */
 export class TezosSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/1729'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

@@ -122,6 +122,12 @@ function computeAddress(publicKeyX: bigint): string {
  * - Simplified: sha256(pubkey_x) mod STARK_P, formatted as 0x + 64-char hex
  */
 export class StarknetSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/9004'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

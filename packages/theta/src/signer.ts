@@ -153,6 +153,20 @@ function numberToMinimalBytes(num: number): Uint8Array {
  */
 export class ThetaSigner implements ChainSigner {
   /**
+   * @param _network - Accepted for interface consistency but not used for address generation.
+   */
+  constructor(_network?: 'mainnet' | 'testnet') {
+    // Network does not affect EVM-compatible address generation
+  }
+
+  /**
+   * Get the default BIP44 HD derivation path for Theta.
+   */
+  getDefaultHdPath(): string {
+    return "m/44'/500'/0'/0/0"
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

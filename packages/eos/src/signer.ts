@@ -304,6 +304,12 @@ function encodeVaruint32(value: number): Uint8Array {
  * Uses secp256k1 (K1) curve, EOS public key format, and EOSIO transaction serialization.
  */
 export class EosSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/194'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

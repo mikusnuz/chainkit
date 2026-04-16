@@ -83,6 +83,14 @@ export interface ChainSigner {
    * @returns True if the address is valid for this chain
    */
   validateAddress(address: string): boolean
+
+  /**
+   * Get the default HD derivation path for this chain and network.
+   * Chains where the HD path differs between mainnet and testnet
+   * (e.g., Bitcoin: m/84'/0' vs m/84'/1') should implement this.
+   * @returns The default BIP44/BIP84 derivation path string
+   */
+  getDefaultHdPath?(): string
 }
 
 /**

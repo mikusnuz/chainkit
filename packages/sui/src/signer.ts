@@ -121,6 +121,12 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
  * Sui addresses are derived as BLAKE2b-256(0x00 || pubkey) with 0x prefix.
  */
 export class SuiSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/784'/0'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

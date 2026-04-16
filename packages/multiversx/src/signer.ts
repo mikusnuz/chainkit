@@ -159,6 +159,12 @@ function bech32ToPubkey(address: string): Uint8Array {
  * Uses ED25519 keys with SLIP-0010 derivation and bech32 addresses (erd1 prefix).
  */
 export class MultiversXSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/508'/0'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

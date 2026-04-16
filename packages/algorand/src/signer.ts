@@ -175,6 +175,12 @@ function decodeAlgorandAddress(address: string): Uint8Array {
  * Uses ED25519 keys with SLIP-0010 derivation and base32 addresses.
  */
 export class AlgorandSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/283'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

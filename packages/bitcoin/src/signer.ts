@@ -184,6 +184,17 @@ export class BitcoinSigner implements ChainSigner {
   }
 
   /**
+   * Get the default BIP84 HD derivation path for Bitcoin.
+   * Mainnet: m/84'/0'/0'/0/0 (BIP84 native SegWit)
+   * Testnet: m/84'/1'/0'/0/0 (coin type 1 for all testnets)
+   */
+  getDefaultHdPath(): string {
+    return this.network === 'testnet'
+      ? "m/84'/1'/0'/0/0"
+      : "m/84'/0'/0'/0/0"
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

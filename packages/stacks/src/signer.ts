@@ -461,6 +461,14 @@ export class StacksSigner implements ChainSigner {
   }
 
   /**
+   * Get the default BIP44 HD derivation path for Stacks.
+   * Stacks uses coin type 5757 for both mainnet and testnet.
+   */
+  getDefaultHdPath(): string {
+    return STACKS_HD_PATH
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

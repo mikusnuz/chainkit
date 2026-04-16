@@ -305,9 +305,29 @@ function encodeTxRaw(
  */
 export class CosmosSigner implements ChainSigner {
   private readonly prefix: string
+  private readonly network: 'mainnet' | 'testnet'
 
-  constructor(prefix: string = 'cosmos') {
-    this.prefix = prefix
+  /**
+   * @param networkOrPrefix - 'mainnet' (default), 'testnet', or a bech32 prefix string (e.g., 'cosmos', 'osmo').
+   *   When 'mainnet' or 'testnet' is passed, the default 'cosmos' prefix is used.
+   *   For backward compatibility, any other string is treated as the bech32 prefix.
+   */
+  constructor(networkOrPrefix: string = 'cosmos') {
+    if (networkOrPrefix === 'mainnet' || networkOrPrefix === 'testnet') {
+      this.network = networkOrPrefix
+      this.prefix = 'cosmos'
+    } else {
+      this.network = 'mainnet'
+      this.prefix = networkOrPrefix
+    }
+  }
+
+  /**
+   * Get the default BIP44 HD derivation path for Cosmos.
+   * Cosmos uses coin type 118 for both mainnet and testnet.
+   */
+  getDefaultHdPath(): string {
+    return "m/44'/118'/0'/0/0"
   }
 
   /**

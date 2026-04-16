@@ -206,6 +206,12 @@ export function encodeSecretStrKey(secretKey: Uint8Array): string {
  * Also compatible with PI Network (same key format and derivation).
  */
 export class StellarSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/148'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

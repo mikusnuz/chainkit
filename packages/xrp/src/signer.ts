@@ -346,6 +346,12 @@ const HASH_PREFIX_SIGN = new Uint8Array([0x53, 0x54, 0x58, 0x00])
  * Default HD path: m/44'/144'/0'/0/0
  */
 export class XrpSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/144'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

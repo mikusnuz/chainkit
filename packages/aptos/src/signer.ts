@@ -121,6 +121,12 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
  * Aptos HD path: m/44'/637'/0'/0'/0'
  */
 export class AptosSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/637'/0'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

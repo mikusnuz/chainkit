@@ -298,6 +298,12 @@ export const HEDERA_ECDSA_PATH = "m/44'/60'/0'/0/0"
  * getAddress returns the hex-encoded ED25519 public key (used as account alias).
  */
 export class HederaSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/3030'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */
@@ -431,6 +437,12 @@ export class HederaSigner implements ChainSigner {
  * - Signs EVM transactions (legacy or EIP-1559) instead of Hedera-native transactions
  */
 export class HederaEcdsaSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/3030'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

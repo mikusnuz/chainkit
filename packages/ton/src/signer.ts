@@ -358,6 +358,12 @@ function buildExternalMessage(params: {
  * Default HD path: m/44'/607'/0'
  */
 export class TonSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/607'/0'/0'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

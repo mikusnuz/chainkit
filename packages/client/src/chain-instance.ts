@@ -120,15 +120,20 @@ export async function createChainInstance(
     return createReadOnlyInstance(provider)
   }
 
-  const signer = new config.chain.Signer()
+  const signer = new config.chain.Signer(config.network ?? 'mainnet')
   let privateKey: string
 
   if (config.privateKey) {
     privateKey = config.privateKey
-  } else if (config.mnemonic && config.hdPath) {
-    privateKey = await signer.derivePrivateKey(config.mnemonic, config.hdPath)
+  } else if (config.mnemonic) {
+    const hdPath = config.hdPath || signer.getDefaultHdPath?.()
+    if (!hdPath) {
+      throw new Error(
+        'hdPath is required when using mnemonic-based key derivation (no default available for this chain)',
+      )
+    }
+    privateKey = await signer.derivePrivateKey(config.mnemonic, hdPath)
   } else {
-    // mnemonic without hdPath: use a common default
     throw new Error(
       'hdPath is required when using mnemonic-based key derivation',
     )

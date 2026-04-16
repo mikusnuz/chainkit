@@ -254,6 +254,12 @@ function serializeTransaction(tx: {
  * hash, which is planned as a follow-up enhancement.
  */
 export class MinaSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/12586'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

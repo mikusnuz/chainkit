@@ -149,6 +149,21 @@ function numberToMinimalBytes(num: number): Uint8Array {
  */
 export class EthereumSigner implements ChainSigner, EvmSignerCapable {
   /**
+   * @param _network - Accepted for interface consistency but not used for address generation.
+   *   EVM addresses are the same on mainnet and testnet.
+   */
+  constructor(_network?: 'mainnet' | 'testnet') {
+    // Network does not affect EVM address generation
+  }
+
+  /**
+   * Get the default BIP44 HD derivation path for Ethereum.
+   */
+  getDefaultHdPath(): string {
+    return "m/44'/60'/0'/0/0"
+  }
+
+  /**
    * Generate a new BIP39 mnemonic phrase.
    */
   generateMnemonic(strength?: number): string {

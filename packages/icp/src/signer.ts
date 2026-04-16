@@ -282,6 +282,12 @@ export function principalToText(principal: Uint8Array): string {
  * The principal is derived from the DER-encoded ED25519 public key via SHA-224.
  */
 export class IcpSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/223'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

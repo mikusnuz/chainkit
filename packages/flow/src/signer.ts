@@ -317,6 +317,12 @@ function encodeDerSignature(rBytes: Uint8Array, sBytes: Uint8Array): Uint8Array 
  * Crypto: ECDSA_P256 via @noble/curves/p256
  */
 export class FlowSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/539'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

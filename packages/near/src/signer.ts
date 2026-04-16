@@ -120,6 +120,12 @@ function slip0010DerivePath(seed: Uint8Array, path: string): Uint8Array {
  * NEAR implicit accounts are hex-encoded ED25519 public keys (64 hex chars).
  */
 export class NearSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/397'/0'"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */

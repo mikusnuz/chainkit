@@ -1,12 +1,17 @@
 import type { ChainSigner, ChainProvider, RpcManagerConfig, UnsignedTx, TransactionInfo, WaitForTransactionOptions } from '@chainkit/core'
 
 /**
+ * Network type for distinguishing mainnet from testnet.
+ */
+export type NetworkType = 'mainnet' | 'testnet'
+
+/**
  * A chain definition that provides a Signer class and a Provider class.
  * Each chain package exports a default definition following this shape.
  */
 export interface ChainDefinition {
   name: string
-  Signer: new () => ChainSigner
+  Signer: new (network?: NetworkType) => ChainSigner
   Provider: new (config: RpcManagerConfig) => ChainProvider
 }
 
@@ -18,6 +23,8 @@ export interface ChainConfig {
   chain: ChainDefinition
   /** RPC endpoint URLs */
   rpcs: string[]
+  /** Network type: 'mainnet' or 'testnet'. Controls address generation and default HD paths. */
+  network?: NetworkType
   /** RPC endpoint selection strategy */
   strategy?: 'failover' | 'round-robin' | 'fastest'
   /** Request timeout in milliseconds */

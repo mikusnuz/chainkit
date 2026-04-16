@@ -39,6 +39,8 @@ const NETWORK_META: Record<PolkadotNetwork, PolkadotNetworkMeta> = {
   polkadot: { symbol: 'DOT', decimals: 10 },
   kusama: { symbol: 'KSM', decimals: 12 },
   substrate: { symbol: 'DOT', decimals: 10 },
+  mainnet: { symbol: 'DOT', decimals: 10 },
+  testnet: { symbol: 'DOT', decimals: 10 },
 }
 
 /**

@@ -27,7 +27,7 @@ const SS58_PREFIX = new TextEncoder().encode('SS58PRE')
 /**
  * Network configurations for Polkadot ecosystem chains.
  */
-export type PolkadotNetwork = 'polkadot' | 'kusama' | 'substrate'
+export type PolkadotNetwork = 'polkadot' | 'kusama' | 'substrate' | 'mainnet' | 'testnet'
 
 interface NetworkConfig {
   prefix: number
@@ -39,6 +39,8 @@ const NETWORK_CONFIGS: Record<PolkadotNetwork, NetworkConfig> = {
   polkadot: { prefix: 0, symbol: 'DOT', decimals: 10 },
   kusama: { prefix: 2, symbol: 'KSM', decimals: 12 },
   substrate: { prefix: 42, symbol: 'DOT', decimals: 10 },
+  mainnet: { prefix: 0, symbol: 'DOT', decimals: 10 },
+  testnet: { prefix: 42, symbol: 'DOT', decimals: 10 },
 }
 
 /**
@@ -466,6 +468,13 @@ export class PolkadotSigner implements ChainSigner {
    */
   getNetworkConfig(): NetworkConfig {
     return { ...this.config }
+  }
+
+  /**
+   * Get the default SLIP-0010 HD derivation path for Polkadot.
+   */
+  getDefaultHdPath(): string {
+    return "m/44'/354'/0'/0/0"
   }
 
   /**

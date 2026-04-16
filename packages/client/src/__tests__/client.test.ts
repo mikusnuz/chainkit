@@ -325,7 +325,25 @@ describe('createChainInstance', () => {
     )
   })
 
-  it('should throw when mnemonic is provided without hdPath', async () => {
+  it('should use getDefaultHdPath when mnemonic is provided without hdPath', async () => {
+    // When signer has getDefaultHdPath, it should use that
+    mockSigner.getDefaultHdPath = vi.fn().mockReturnValue("m/44'/60'/0'/0/0")
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      mnemonic: 'test mnemonic',
+    }) as FullChainInstance
+
+    expect(mockSigner.derivePrivateKey).toHaveBeenCalledWith(
+      'test mnemonic',
+      "m/44'/60'/0'/0/0",
+    )
+    expect(instance.signer).toBeDefined()
+  })
+
+  it('should throw when mnemonic provided without hdPath and no default', async () => {
+    // When signer does NOT have getDefaultHdPath, it should throw
+    delete (mockSigner as Record<string, unknown>).getDefaultHdPath
     await expect(
       createChainInstance({
         chain: mockChain,
@@ -333,6 +351,27 @@ describe('createChainInstance', () => {
         mnemonic: 'test mnemonic',
       }),
     ).rejects.toThrow('hdPath is required')
+  })
+
+  it('should pass network to signer constructor', async () => {
+    await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      network: 'testnet',
+      privateKey: '0xprivkey',
+    })
+
+    expect(mockChain.Signer).toHaveBeenCalledWith('testnet')
+  })
+
+  it('should default to mainnet when network is not specified', async () => {
+    await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      privateKey: '0xprivkey',
+    })
+
+    expect(mockChain.Signer).toHaveBeenCalledWith('mainnet')
   })
 
   it('should pass RPC config to provider constructor', async () => {

@@ -97,6 +97,12 @@ export function hexToAddress(hex: string): string {
  * Address format: Base58check with 0x41 prefix (starts with 'T')
  */
 export class TronSigner implements ChainSigner {
+  constructor(_network?: 'mainnet' | 'testnet') {}
+
+  getDefaultHdPath(): string {
+    return "m/44'/195'/0'/0/0"
+  }
+
   /**
    * Generate a new BIP39 mnemonic phrase.
    */
