@@ -1,6 +1,6 @@
 # ChainKit
 
-Cross-chain abstraction SDK. One unified API for 29 blockchains -- wallet creation, address validation, balance queries, transaction signing, and token operations.
+Cross-chain abstraction SDK. One unified API for 30 blockchains -- wallet creation, address validation, balance queries, transaction signing, and token operations.
 
 Zero external chain SDK dependencies. Pure JavaScript crypto via @noble/@scure.
 
@@ -50,7 +50,7 @@ await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
 
 ## Unified API
 
-### ChainSigner (Offline -- all 29 chains)
+### ChainSigner (Offline -- all 30 chains)
 
 Every chain signer implements these methods identically:
 
@@ -93,7 +93,7 @@ const sig = await signer.signMessage({
 })
 ```
 
-### ChainProvider (Online -- all 29 chains)
+### ChainProvider (Online -- all 30 chains)
 
 ```typescript
 import { EthereumProvider } from '@chainkit/ethereum'
@@ -252,6 +252,7 @@ client.ethereum.signer     // ChainSigner instance (only when key provided)
 | STARK | Stark curve | StarkNet |
 | Secp256r1 | NIST P-256 ECDSA | Neo |
 | ECDSA_P256 | ECDSA P-256 | Flow |
+| Pasta | Pallas curve Schnorr | Mina |
 
 ## Packages
 
@@ -288,6 +289,7 @@ client.ethereum.signer     // ChainSigner instance (only when key provided)
 | `@chainkit/neo` | Neo |
 | `@chainkit/flow` | Flow |
 | `@chainkit/icon` | Icon |
+| `@chainkit/mina` | Mina |
 
 ## Supported Chains & Exchange Coverage
 
@@ -844,6 +846,18 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
 
 ---
 
+### @chainkit/mina (Pasta)
+
+**Native:** MINA
+
+| Token | Upbit | Binance |
+|-------|-------|---------|
+| MINA | - | O |
+
+**Estimated total: ~1 coin**
+
+---
+
 ## Architecture
 
 ```
@@ -886,11 +900,11 @@ All strategies include automatic retry (configurable `retries`, default 2) and p
 - **BIP32/44 HD derivation**: Standard derivation paths per chain (e.g., `m/44'/60'/0'/0/0` for Ethereum)
 - **Raw private key**: Direct hex-encoded private key input
 - **WIF**: Bitcoin Wallet Import Format
-- **Address validation**: Per-chain format validation (EIP-55 checksum, bech32, base58, SS58, etc.)
+- **Address validation**: Per-chain format validation (EIP-55 checksum, bech32, base58, base58check, SS58, etc.)
 
 ## Testnet Verification
 
-25 chains verified with real testnet RPC connectivity and address derivation:
+26 chains verified with real testnet RPC connectivity and address derivation:
 
 | Chain | Testnet | Status |
 |-------|---------|--------|
@@ -919,6 +933,7 @@ All strategies include automatic retry (configurable `retries`, default 2) and p
 | Theta | Testnet | Verified |
 | MultiversX | Testnet | Verified |
 | Polkadot | Westend | Verified |
+| Mina | Devnet | Verified |
 
 ## License
 

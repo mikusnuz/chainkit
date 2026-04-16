@@ -13,9 +13,10 @@ const GROUP_COLORS: Record<ChainGroup, string> = {
   Secp256r1: 'text-emerald-400',
   ECDSA_P256: 'text-rose-400',
   STARK: 'text-purple-400',
+  Pasta: 'text-orange-400',
 }
 
-const GROUP_ORDER: ChainGroup[] = ['Secp256k1', 'ED25519', 'SR25519', 'Secp256r1', 'ECDSA_P256', 'STARK']
+const GROUP_ORDER: ChainGroup[] = ['Secp256k1', 'ED25519', 'SR25519', 'Secp256r1', 'ECDSA_P256', 'STARK', 'Pasta']
 
 const Sidebar = ({ selected, onSelect }: SidebarProps) => {
   return (
@@ -64,7 +65,7 @@ const Sidebar = ({ selected, onSelect }: SidebarProps) => {
 
       <div className="p-3 border-t border-surface-300">
         <div className="text-[10px] text-gray-600 text-center">
-          29 chains supported
+          30 chains supported
         </div>
       </div>
     </aside>

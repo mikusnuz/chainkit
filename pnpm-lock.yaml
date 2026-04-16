@@ -267,6 +267,21 @@ importers:
         specifier: ^2.2.0
         version: 2.3.0
 
+  packages/mina:
+    dependencies:
+      '@chainkit/core':
+        specifier: workspace:*
+        version: link:../core
+      '@noble/curves':
+        specifier: ^1.9.0
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      '@scure/base':
+        specifier: ^1.2.0
+        version: 1.2.6
+
   packages/multiversx:
     dependencies:
       '@chainkit/core':
@@ -536,6 +551,9 @@ importers:
       '@chainkit/kaia':
         specifier: workspace:*
         version: link:../packages/kaia
+      '@chainkit/mina':
+        specifier: workspace:*
+        version: link:../packages/mina
       '@chainkit/multiversx':
         specifier: workspace:*
         version: link:../packages/multiversx

@@ -28,8 +28,9 @@ export type ChainId =
   | 'neo'
   | 'flow'
   | 'icon'
+  | 'mina'
 
-export type ChainGroup = 'Secp256k1' | 'ED25519' | 'SR25519' | 'Secp256r1' | 'ECDSA_P256' | 'STARK'
+export type ChainGroup = 'Secp256k1' | 'ED25519' | 'SR25519' | 'Secp256r1' | 'ECDSA_P256' | 'STARK' | 'Pasta'
 
 export interface ChainConfig {
   name: string
@@ -303,6 +304,15 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
     explorer: 'https://lisbon.tracker.solidwallet.io',
     group: 'Secp256k1',
   },
+  mina: {
+    name: 'Mina',
+    hdPath: "m/44'/12586'/0'/0/0",
+    testnetRpc: 'https://devnet.minaprotocol.network/graphql',
+    decimals: 9,
+    symbol: 'MINA',
+    explorer: 'https://minascan.io/devnet',
+    group: 'Pasta',
+  },
 }
 
 export const CHAIN_GROUPS: Record<ChainGroup, ChainId[]> = {
@@ -312,6 +322,7 @@ export const CHAIN_GROUPS: Record<ChainGroup, ChainId[]> = {
   Secp256r1: ['neo'],
   ECDSA_P256: ['flow'],
   STARK: ['starknet'],
+  Pasta: ['mina'],
 }
 
 export const DEFAULT_MNEMONIC =

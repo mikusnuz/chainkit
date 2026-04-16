@@ -31,6 +31,7 @@ import { iota } from '@chainkit/iota'
 import { neo } from '@chainkit/neo'
 import { flow } from '@chainkit/flow'
 import { icon } from '@chainkit/icon'
+import { mina } from '@chainkit/mina'
 import type { RpcManagerConfig } from '@chainkit/core'
 
 type SignerConstructor = new () => { derivePrivateKey: (mnemonic: string, path: string) => Promise<string>; getAddress: (pk: string) => string }
@@ -71,6 +72,7 @@ const CHAIN_MODULES: Record<ChainId, { Signer: SignerConstructor; Provider: Prov
   neo: neo as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   flow: flow as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
   icon: icon as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
+  mina: mina as unknown as { Signer: SignerConstructor; Provider: ProviderConstructor },
 }
 
 export interface WalletState {
