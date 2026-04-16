@@ -1,14 +1,19 @@
 # ChainKit
 
-Cross-chain abstraction SDK. One unified API for 30 blockchains -- wallet creation, address validation, balance queries, transaction signing, and token operations.
+Cross-chain wallet SDK. One unified API for 30 blockchains -- wallet creation, address validation, balance queries, transaction signing, and token operations.
 
 Zero external chain SDK dependencies. Pure JavaScript crypto via @noble/@scure.
 
 ## Installation
 
 ```bash
+# Install the client and only the chains you need
 npm install @chainkit/client @chainkit/ethereum @chainkit/bitcoin @chainkit/solana
-# Install only the chains you need
+
+# Full list of chain packages:
+# @chainkit/{ethereum,bitcoin,solana,tron,ton,cosmos,aptos,sui,near,cardano,
+#   xrp,stellar,starknet,stacks,kaia,eos,polkadot,hedera,filecoin,icp,
+#   algorand,vechain,tezos,theta,multiversx,iota,neo,flow,icon,mina}
 ```
 
 ## Quick Start
@@ -23,7 +28,7 @@ const client = await createClient({
   chains: {
     ethereum: {
       chain: ethereum,
-      rpcs: ['https://eth-mainnet.g.alchemy.com/v2/...'],
+      rpcs: ['https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY'],
       privateKey: '0x...',
     },
     bitcoin: {
@@ -33,22 +38,28 @@ const client = await createClient({
     solana: {
       chain: solana,
       rpcs: ['https://api.mainnet-beta.solana.com'],
-      mnemonic: 'abandon abandon ...',
+      mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
       hdPath: "m/44'/501'/0'/0'",
     },
   },
 })
 
-// Unified API across all chains
+// Read (all chains)
 await client.ethereum.getBalance('0x...')
 await client.bitcoin.getBalance('bc1...')
 await client.solana.getBalance('HAgk...')
 
-// Send transaction (only available when signer is configured)
-await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
+// Write (only when privateKey or mnemonic is provided)
+const txHash = await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
+
+// Wait for confirmation
+const confirmedTx = await client.ethereum.waitForTransaction(txHash)
+
+// Clean up key material when done
+client.ethereum.destroy()
 ```
 
-## Unified API
+## Unified API Reference
 
 ### ChainSigner (Offline -- all 30 chains)
 
@@ -62,36 +73,52 @@ import { SolanaSigner } from '@chainkit/solana'
 // Works the same on ALL chains
 const signer = new EthereumSigner()
 
-// Mnemonic
+// --- Mnemonic ---
 const mnemonic = signer.generateMnemonic()        // 12 words (128 bits)
 signer.generateMnemonic(256)                       // 24 words
 signer.validateMnemonic(mnemonic)                  // true/false
 
-// Key derivation
+// --- Key derivation ---
 const pk = await signer.derivePrivateKey(mnemonic, "m/44'/60'/0'/0/0")
 
-// Address
+// --- Address ---
 const address = signer.getAddress(pk)
 signer.validateAddress(address)                    // true
 signer.validateAddress('invalid')                  // false
 
-// Sign transaction (unified params object)
+// --- Default HD path ---
+signer.getDefaultHdPath()                          // "m/44'/60'/0'/0/0"
+
+// --- Sign transaction (unified params object) ---
 const signed = await signer.signTransaction({
   privateKey: pk,
   tx: {
-    to: '0x...',
+    to: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD68',
     value: '1000000000000000000',
     fee: { gasLimit: '0x5208', maxFeePerGas: '0x2540be400' },
     extra: { chainId: 1 },
   },
 })
 
-// Sign message
+// --- Sign message ---
 const sig = await signer.signMessage({
   privateKey: pk,
   message: 'Hello ChainKit',
 })
 ```
+
+#### ChainSigner Method Reference
+
+| Method | Parameters | Return | Description |
+|--------|-----------|--------|-------------|
+| `generateMnemonic` | `strength?: number` (128 or 256) | `string` | Generate BIP39 mnemonic (12 or 24 words) |
+| `validateMnemonic` | `mnemonic: string` | `boolean` | Validate a BIP39 mnemonic |
+| `derivePrivateKey` | `mnemonic: string, hdPath: string` | `Promise<string> \| string` | Derive private key from mnemonic via BIP44 |
+| `getAddress` | `privateKey: string` | `string` | Get address from private key |
+| `validateAddress` | `address: string` | `boolean` | Validate address format for this chain |
+| `signTransaction` | `params: { privateKey, tx }` | `Promise<string>` | Sign a transaction, returns signed tx hex |
+| `signMessage` | `params: { privateKey, message }` | `Promise<string> \| string` | Sign an arbitrary message |
+| `getDefaultHdPath` | (none) | `string` | Get the default HD derivation path |
 
 ### ChainProvider (Online -- all 30 chains)
 
@@ -113,22 +140,44 @@ const balance = await provider.getBalance('0x...')
 const nonce = await provider.getNonce('0x...')
 
 // Transaction info
-const tx = await provider.getTransaction('0x...')
+const tx = await provider.getTransaction('0xabc...')
+// { hash, from, to, value, fee, blockNumber, blockHash, status, timestamp, data, nonce }
 
 // Block info
 const block = await provider.getBlock(12345)
+// { number, hash, parentHash, timestamp, transactions }
 
 // Fee estimation (slow / average / fast)
 const fee = await provider.estimateFee()
 // { slow: '...', average: '...', fast: '...', unit: 'wei' }
 
-// Broadcast
+// Broadcast signed transaction
 const txHash = await provider.broadcastTransaction(signedTxHex)
 
 // Chain info
 const info = await provider.getChainInfo()
 // { chainId: '1', name: 'Ethereum Mainnet', symbol: 'ETH', decimals: 18, testnet: false, blockHeight: 12345 }
+
+// Wait for transaction confirmation
+const confirmedTx = await provider.waitForTransaction('0xabc...', {
+  timeoutMs: 60000,    // default: 60000 (1 minute)
+  intervalMs: 3000,    // default: 3000 (3 seconds)
+})
 ```
+
+#### ChainProvider Method Reference
+
+| Method | Parameters | Return | Description |
+|--------|-----------|--------|-------------|
+| `getBalance` | `address: string` | `Promise<Balance>` | Get native token balance |
+| `getNativeBalances` | `address: string` | `Promise<Balance[]>` | Get all native balances (dual-token chains, optional) |
+| `getTransaction` | `hash: string` | `Promise<TransactionInfo \| null>` | Get transaction by hash |
+| `getBlock` | `hashOrNumber: string \| number` | `Promise<BlockInfo \| null>` | Get block by number or hash |
+| `getNonce` | `address: string` | `Promise<string \| number>` | Get nonce/sequence number |
+| `estimateFee` | (none) | `Promise<FeeEstimate>` | Estimate fees (slow/average/fast) |
+| `broadcastTransaction` | `signedTx: string` | `Promise<string>` | Broadcast signed tx, returns tx hash |
+| `getChainInfo` | (none) | `Promise<ChainInfo>` | Get chain metadata |
+| `waitForTransaction` | `hash: string, options?: WaitForTransactionOptions` | `Promise<TransactionInfo>` | Poll until confirmed/failed/timeout |
 
 ### Capabilities (chain-specific extensions)
 
@@ -174,7 +223,7 @@ const unsubscribe = await provider.subscribeTransactions(address, tx => { ... })
 #### EvmSignerCapable (EIP-712)
 
 ```typescript
-// Ethereum, Kaia, VeChain, Theta, Icon
+// Ethereum, Kaia
 const sig = await signer.signTypedData({
   privateKey: pk,
   domain: { name: 'MyDApp', version: '1', chainId: 1 },
@@ -197,7 +246,9 @@ await provider.getBalance(address)             // primary token
 await provider.getNativeBalances?.(address)     // all native tokens
 ```
 
-### Unified Client
+## Unified Client
+
+The unified client wraps signer and provider into a single ergonomic interface:
 
 ```typescript
 import { createClient } from '@chainkit/client'
@@ -210,23 +261,47 @@ const client = await createClient({
       chain: ethereum,
       rpcs: ['https://...'],
       privateKey: '0x...',     // optional: omit for read-only
+      network: 'mainnet',      // optional: 'mainnet' | 'testnet'
     },
     bitcoin: {
       chain: bitcoin,
       rpcs: ['https://...'],
+      network: 'testnet',      // affects address format (bc1 vs tb1)
     },
   },
 })
 
-// Read (all chains)
+// --- Read (all chains) ---
 await client.ethereum.getBalance('0x...')
-await client.ethereum.getTransaction('0x...')
+await client.ethereum.getTransaction('0xabc...')
 await client.ethereum.getBlock(12345)
 await client.ethereum.estimateFee()
 await client.ethereum.getChainInfo()
 
-// Write (only when privateKey or mnemonic provided)
-await client.ethereum.send({ to: '0x...', amount: '1000' })
+// --- Write (only when privateKey or mnemonic provided) ---
+
+// send() auto-fetches nonce and fee, signs, and broadcasts
+const txHash = await client.ethereum.send({
+  to: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD68',
+  amount: '1000000000000000000',
+  memo: 'optional memo',
+  data: '0x...',               // optional calldata
+  options: { chainId: 1 },     // chain-specific overrides
+})
+
+// Wait for confirmation
+const confirmed = await client.ethereum.waitForTransaction(txHash, {
+  timeoutMs: 120000,
+  intervalMs: 5000,
+})
+
+// prepareTransaction() builds an unsigned tx without signing
+const unsignedTx = await client.ethereum.prepareTransaction({
+  to: '0x...',
+  amount: '1000000000000000000',
+})
+
+// Low-level signing (bypasses auto-fetch)
 await client.ethereum.signTransaction({
   privateKey: '0x...',
   tx: { to: '0x...', value: '1000' },
@@ -235,12 +310,230 @@ await client.ethereum.signMessage({
   privateKey: '0x...',
   message: 'Hello',
 })
-await client.ethereum.getAddress()
+
+// Get the address derived from the configured key
+const myAddress = client.ethereum.getAddress()
 
 // Access underlying signer/provider directly
 client.ethereum.provider   // ChainProvider instance
 client.ethereum.signer     // ChainSigner instance (only when key provided)
+
+// Zero out stored private key material when done
+client.ethereum.destroy()
 ```
+
+### Client Configuration Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `chain` | `ChainDefinition` | (required) | Chain definition from `@chainkit/<chain>` |
+| `rpcs` | `string[]` | (required) | RPC endpoint URLs |
+| `network` | `'mainnet' \| 'testnet'` | `'mainnet'` | Controls address generation and default HD paths |
+| `strategy` | `'failover' \| 'round-robin' \| 'fastest'` | `'failover'` | RPC endpoint selection strategy |
+| `timeout` | `number` | `10000` | Request timeout in milliseconds |
+| `retries` | `number` | `2` | Number of retries per endpoint |
+| `privateKey` | `string` | (optional) | Private key for signing (hex string) |
+| `mnemonic` | `string` | (optional) | BIP39 mnemonic for key derivation |
+| `hdPath` | `string` | chain default | BIP44 HD derivation path |
+
+**Security note:** When a signing client uses `strategy: 'fastest'`, the client automatically downgrades to `'failover'` to prevent a rogue endpoint from supplying manipulated nonce or fee data.
+
+## ABI Encoder
+
+ChainKit includes a built-in ABI encoder/decoder for EVM contract interactions. No external ABI libraries needed.
+
+```typescript
+import {
+  encodeFunctionCall,
+  encodeFunctionSelector,
+  decodeFunctionResult,
+  ERC20,
+} from '@chainkit/core'
+
+// --- Encode a function call ---
+const transferData = encodeFunctionCall(
+  'transfer(address,uint256)',
+  ['0x742d35Cc6634C0532925a3b844Bc9e7595f2bD68', 1000000n],
+)
+// Returns: "0xa9059cbb000000000000000000000000742d35cc6634c0532925a3b844bc9e7595f2bd6800000000000000000000000000000000000000000000000000000000000f4240"
+
+// --- ERC-20 presets ---
+const approveData = encodeFunctionCall(ERC20.approve, ['0xSpender...', 1000000n])
+const balanceData = encodeFunctionCall(ERC20.balanceOf, ['0xHolder...'])
+// Available presets: ERC20.transfer, ERC20.approve, ERC20.balanceOf,
+// ERC20.allowance, ERC20.totalSupply, ERC20.decimals, ERC20.symbol, ERC20.name
+
+// --- Get function selector ---
+const selector = encodeFunctionSelector('transfer(address,uint256)')
+// "0xa9059cbb"
+
+// --- Decode return data ---
+const [balance] = decodeFunctionResult(['uint256'], '0x00000000000000000000000000000000000000000000000000000000000f4240')
+// balance = 1000000n
+
+// Decode multiple return values
+const [addr, amount] = decodeFunctionResult(
+  ['address', 'uint256'],
+  returnDataHex,
+)
+```
+
+### Supported ABI Types
+
+| Type | Encode | Decode |
+|------|--------|--------|
+| `address` | `encodeAddress` | `decodeAddress` |
+| `uint256` (and all uint*) | `encodeUint256` | `decodeUint256` |
+| `int256` (and all int*) | `encodeInt256` | `decodeInt256` |
+| `bool` | `encodeBool` | `decodeBool` |
+| `bytes32` (and all fixed bytes*) | `encodeBytes32` | `decodeBytes32` |
+| `string` | `encodeString` | `decodeString` |
+| `bytes` | `encodeBytes` | (via `decodeFunctionResult`) |
+
+**Limitation:** Dynamic arrays (e.g., `uint256[]`) are not supported in the encoder. For complex ABI encoding with arrays, use an external ABI library.
+
+## SecureKey
+
+JavaScript strings are immutable and cannot be cleared from memory. SecureKey stores private key material as a mutable `Uint8Array` that can be explicitly zeroed.
+
+```typescript
+import { SecureKey } from '@chainkit/core'
+
+// Create from hex string or Uint8Array
+const key = new SecureKey('0xabc123...')
+
+// Access key material
+key.hex     // "0xabc123..." (0x-prefixed hex string)
+key.bytes   // Uint8Array
+
+// Check if destroyed
+key.isDestroyed  // false
+
+// Zero out key material
+key.destroy()
+
+// After destroy, accessing .hex or .bytes throws an error
+key.isDestroyed  // true
+key.hex           // throws Error: 'SecureKey has been destroyed'
+```
+
+The unified client uses SecureKey internally. Call `client.<chain>.destroy()` to zero the stored key material when the client is no longer needed.
+
+## RPC Strategies
+
+```typescript
+// Failover: try endpoints in order, fall back on failure
+{ endpoints: ['rpc1', 'rpc2'], strategy: 'failover' }
+
+// Round-robin: distribute requests across endpoints
+{ endpoints: ['rpc1', 'rpc2', 'rpc3'], strategy: 'round-robin' }
+
+// Fastest: race all endpoints, use the first successful response
+{ endpoints: ['rpc1', 'rpc2'], strategy: 'fastest' }
+```
+
+All strategies include automatic retry (configurable `retries`, default 2) and per-request timeout (configurable `timeout`, default 10000ms). JSON-RPC errors are not retried -- only network/timeout failures trigger retries.
+
+### strictHttps
+
+Enable `strictHttps: true` to reject non-HTTPS endpoints (except localhost/127.0.0.1). Without this flag, insecure endpoints produce a console warning but are still used.
+
+```typescript
+const provider = new EthereumProvider({
+  endpoints: ['https://eth-mainnet.example.com'],
+  strictHttps: true,  // throws on http:// endpoints
+})
+```
+
+### RPC URL Redaction
+
+Error messages from RPC failures automatically redact endpoint URLs to prevent API key leakage. For example, `https://eth-mainnet.g.alchemy.com/v2/sk_abc123` becomes `https://eth-mainnet.g.alchemy.com/...`.
+
+### JSON-RPC Response Validation
+
+The RPC manager validates that:
+- Responses conform to JSON-RPC 2.0 structure
+- Response IDs match request IDs (prevents response desynchronization from a malicious endpoint)
+
+## Key Management
+
+- **BIP39 mnemonic**: 12 or 24 word phrases (128/256 bit entropy)
+- **BIP32/44 HD derivation**: Standard derivation paths per chain (e.g., `m/44'/60'/0'/0/0` for Ethereum)
+- **Raw private key**: Direct hex-encoded private key input
+- **WIF**: Bitcoin Wallet Import Format
+- **Address validation**: Per-chain format validation (EIP-55 checksum, bech32, base58, base58check, SS58, etc.)
+
+## Network Configuration
+
+The `network` option on `createClient` controls address generation and default HD paths. This matters for chains where mainnet and testnet use different address formats or coin types.
+
+```typescript
+// Bitcoin: network affects address prefix (bc1 vs tb1) and HD path coin type
+const client = await createClient({
+  chains: {
+    bitcoin: {
+      chain: bitcoin,
+      rpcs: ['https://...'],
+      network: 'testnet',  // generates tb1... addresses, uses m/84'/1'/0'/0/0
+      mnemonic: '...',
+    },
+  },
+})
+
+// Stacks: network affects address prefix (SP vs ST) and tx chain ID
+const client = await createClient({
+  chains: {
+    stacks: {
+      chain: stacks,
+      rpcs: ['https://api.testnet.hiro.so'],
+      network: 'testnet',  // generates ST... addresses
+      mnemonic: '...',
+    },
+  },
+})
+```
+
+Chains where `network` affects behavior:
+- **Bitcoin**: Address prefix (`bc1` vs `tb1`), HD path coin type (`0'` vs `1'`), address validation
+- **Stacks**: Address prefix (`SP` vs `ST`), transaction chain ID
+
+For all other chains, `network` is accepted but does not change address derivation.
+
+## Default HD Paths
+
+| Chain | Default HD Path | Coin Type |
+|-------|----------------|-----------|
+| Ethereum | `m/44'/60'/0'/0/0` | 60 |
+| Bitcoin (mainnet) | `m/84'/0'/0'/0/0` | 0 |
+| Bitcoin (testnet) | `m/84'/1'/0'/0/0` | 1 |
+| Solana | `m/44'/501'/0'/0'` | 501 |
+| Tron | `m/44'/195'/0'/0/0` | 195 |
+| TON | `m/44'/607'/0'/0'/0'` | 607 |
+| Cosmos | `m/44'/118'/0'/0/0` | 118 |
+| Aptos | `m/44'/637'/0'/0'/0'` | 637 |
+| Sui | `m/44'/784'/0'/0'/0'` | 784 |
+| NEAR | `m/44'/397'/0'` | 397 |
+| Cardano | `m/1852'/1815'/0'/0/0` | 1815 |
+| XRP | `m/44'/144'/0'/0/0` | 144 |
+| Stellar | `m/44'/148'/0'` | 148 |
+| StarkNet | `m/44'/9004'/0'/0/0` | 9004 |
+| Stacks | `m/44'/5757'/0'/0/0` | 5757 |
+| Kaia | `m/44'/8217'/0'/0/0` | 8217 |
+| EOS | `m/44'/194'/0'/0/0` | 194 |
+| Polkadot | `m/44'/354'/0'/0/0` | 354 |
+| Hedera | `m/44'/3030'/0'/0/0` | 3030 |
+| Filecoin | `m/44'/461'/0'/0/0` | 461 |
+| ICP | `m/44'/223'/0'/0/0` | 223 |
+| Algorand | `m/44'/283'/0'/0/0` | 283 |
+| VeChain | `m/44'/818'/0'/0/0` | 818 |
+| Tezos | `m/44'/1729'/0'/0'` | 1729 |
+| Theta | `m/44'/500'/0'/0/0` | 500 |
+| MultiversX | `m/44'/508'/0'/0'/0'` | 508 |
+| IOTA | `m/44'/4218'/0'/0'/0'` | 4218 |
+| Neo | `m/44'/888'/0'/0/0` | 888 |
+| Flow | `m/44'/539'/0'/0/0` | 539 |
+| Icon | `m/44'/4801074'/0'/0/0` | 4801074 |
+| Mina | `m/44'/12586'/0'/0/0` | 12586 |
 
 ## Signature Algorithm Categories
 
@@ -258,7 +551,7 @@ client.ethereum.signer     // ChainSigner instance (only when key provided)
 
 | Package | Description |
 |---------|-------------|
-| `@chainkit/core` | Shared interfaces, types, crypto utilities (BIP39/32), RPC manager |
+| `@chainkit/core` | Shared interfaces, types, crypto utilities (BIP39/32), RPC manager, ABI encoder/decoder, SecureKey |
 | `@chainkit/client` | Unified client that composes chain packages |
 | `@chainkit/ethereum` | Ethereum + all EVM chains |
 | `@chainkit/bitcoin` | Bitcoin + UTXO forks |
@@ -277,7 +570,7 @@ client.ethereum.signer     // ChainSigner instance (only when key provided)
 | `@chainkit/kaia` | Kaia (prev Klaytn) + KIP-7 tokens |
 | `@chainkit/eos` | EOS / Vaulta |
 | `@chainkit/polkadot` | Polkadot + Substrate parachains |
-| `@chainkit/hedera` | Hedera |
+| `@chainkit/hedera` | Hedera (ED25519 + ECDSA signers) |
 | `@chainkit/filecoin` | Filecoin |
 | `@chainkit/icp` | Internet Computer |
 | `@chainkit/algorand` | Algorand |
@@ -703,6 +996,10 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
 
 **Native:** HBAR
 
+Hedera provides two signers:
+- `HederaSigner` (default, ED25519) -- Hedera-native transactions with public key alias addresses
+- `HederaEcdsaSigner` (Secp256k1) -- EVM-compatible mode with 0x addresses, for use with Hedera's EVM relay
+
 | Token | Upbit | Binance |
 |-------|-------|---------|
 | HBAR | O | O |
@@ -858,6 +1155,87 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
 
 ---
 
+## Security
+
+Full audit report: [`docs/security-audit-report-2026-04.md`](docs/security-audit-report-2026-04.md)
+
+Key security properties:
+
+- **No third-party chain SDKs** -- eliminates supply chain attack surface
+- **All crypto via Cure53-audited libraries** -- `@noble/hashes`, `@noble/secp256k1`, `@noble/ed25519`, `@scure/bip39`, `@scure/base`
+- **Private key zeroing** -- SecureKey stores keys as Uint8Array, explicitly zeroed via `destroy()`
+- **Address validation before signing** -- recipient addresses validated against chain format before transaction construction
+- **ChainId enforcement for EVM** -- `extra.chainId` required, preventing cross-chain replay attacks
+- **strictHttps option** -- reject non-HTTPS RPC endpoints in production
+- **Nonce mutex** -- concurrent `send()` calls use a serialized nonce counter to prevent nonce collisions
+- **RPC response validation** -- JSON-RPC 2.0 structure verification and request/response ID matching
+- **URL redaction** -- API keys in RPC URLs are never exposed in error messages
+- **Bitcoin fee sanity check** -- fee cannot exceed 50% of total input value
+- **Network enforcement** -- Bitcoin signer rejects addresses from wrong network (mainnet/testnet)
+- **Mnemonic validation** -- invalid mnemonics rejected before seed derivation
+- **Strategy auto-downgrade** -- signing clients using `fastest` strategy automatically downgrade to `failover`
+- **Input sanitization** -- `send()` strips signing-critical fields (`outputs`, `inputs`) from user-provided options
+
+Audit summary: 24 findings (18 initial + 6 cross-check), 22 remediated, 2 accepted as known risks with documented justification. See audit report for details.
+
+## Testnet Verification
+
+24/30 chains have been verified with real testnet transactions. 30/30 chains have verified address derivation.
+
+| Chain | Testnet | Address | Balance | Tx Send |
+|-------|---------|---------|---------|---------|
+| Ethereum | Sepolia | PASS | PASS | PASS |
+| Bitcoin | Testnet | PASS | PASS | PASS |
+| Solana | Devnet | PASS | PASS | PASS |
+| Tron | Shasta | PASS | PASS | PASS |
+| TON | Testnet | PASS | PASS | PASS |
+| Cosmos | Theta Testnet | PASS | PASS | PASS |
+| Aptos | Devnet | PASS | PASS | PASS |
+| Sui | Devnet | PASS | PASS | PASS |
+| NEAR | Testnet | PASS | PASS | PASS |
+| XRP | Testnet | PASS | PASS | PASS |
+| Stellar | Testnet | PASS | PASS | PASS |
+| Stacks | Testnet | PASS | PASS | PASS |
+| Kaia | Kairos | PASS | PASS | PASS |
+| EOS | Jungle4 | PASS | PASS | PASS |
+| Cardano | Preview | PASS | PASS | PASS |
+| StarkNet | Sepolia | PASS | PASS | PASS |
+| Hedera | Testnet | PASS | PASS | PASS |
+| Filecoin | Calibration | PASS | PASS | PASS |
+| ICP | Mainnet Rosetta | PASS | PASS | PASS |
+| Algorand | Testnet | PASS | PASS | PASS |
+| VeChain | Testnet | PASS | PASS | PASS |
+| Tezos | Ghostnet | PASS | PASS | PASS |
+| Theta | Testnet | PASS | PASS | PASS |
+| MultiversX | Testnet | PASS | PASS | PASS |
+| Polkadot | Westend | PASS | PASS | N/A |
+| Mina | Devnet | PASS | PASS | N/A |
+| Neo | N/A | PASS | N/A | N/A |
+| Flow | N/A | PASS | N/A | N/A |
+| Icon | N/A | PASS | N/A | N/A |
+| IOTA | N/A | PASS | N/A | N/A |
+
+**Not yet verified on testnet (4 chains):** Neo, Flow, Icon, IOTA -- no accessible public testnet RPC at time of audit. Address derivation is verified for all 4.
+
+**Polkadot and Mina:** Balance queries verified, but transaction send requires native token deposits not available via faucet at time of testing.
+
+No mainnet verification has been performed.
+
+## Playground
+
+ChainKit includes a browser-based wallet playground for testing all 30 chains interactively. It provides:
+
+- Per-chain wallet generation from mnemonic
+- Address derivation across all signature algorithms
+- Global wallet: derive addresses for all 30 chains from a single mnemonic
+- Balance queries against testnets
+
+```bash
+cd playground
+npm install
+npm run dev
+```
+
 ## Architecture
 
 ```
@@ -865,75 +1243,33 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
   |
   +-- createClient() --> ReadOnlyChainInstance (no key = read-only)
   |                  --> FullChainInstance     (key provided = read+write)
+  |                      +-- send()              auto nonce+fee, sign, broadcast
+  |                      +-- prepareTransaction() build unsigned tx
+  |                      +-- waitForTransaction() poll until confirmed
+  |                      +-- destroy()            zero key material
   |
   +-- @chainkit/core
-  |     +-- ChainSigner interface   (generateMnemonic, derivePrivateKey, getAddress, signTransaction, signMessage, validateAddress)
-  |     +-- ChainProvider interface (getBalance, getTransaction, getBlock, getNonce, estimateFee, broadcastTransaction, getChainInfo)
-  |     +-- Capabilities            (ContractCapable, TokenCapable, UtxoCapable, SubscriptionCapable, EvmSignerCapable)
-  |     +-- RpcManager              (failover, round-robin, fastest)
-  |     +-- Crypto utilities        (BIP39 mnemonic, BIP32 HD derivation via @scure/bip39 + @noble/hashes)
+  |     +-- ChainSigner interface    (generateMnemonic, derivePrivateKey, getAddress,
+  |     |                             signTransaction, signMessage, validateAddress,
+  |     |                             getDefaultHdPath)
+  |     +-- ChainProvider interface  (getBalance, getTransaction, getBlock, getNonce,
+  |     |                             estimateFee, broadcastTransaction, getChainInfo,
+  |     |                             waitForTransaction)
+  |     +-- Capabilities             (ContractCapable, TokenCapable, UtxoCapable,
+  |     |                             SubscriptionCapable, EvmSignerCapable)
+  |     +-- RpcManager               (failover, round-robin, fastest, strictHttps)
+  |     +-- ABI Encoder/Decoder      (encodeFunctionCall, decodeFunctionResult, ERC20 presets)
+  |     +-- SecureKey                (Uint8Array key storage with explicit zeroing)
+  |     +-- Crypto utilities         (BIP39 mnemonic, BIP32 HD derivation via @scure/bip39
+  |                                   + @noble/hashes)
   |
   +-- @chainkit/<chain>
-        +-- signer.ts   (offline: key generation, address derivation, tx signing, message signing)
-        +-- provider.ts  (online: RPC queries, balance, blocks, broadcasting, token ops)
+        +-- signer.ts    (offline: key generation, address derivation, tx signing,
+        |                 message signing)
+        +-- provider.ts  (online: RPC queries, balance, blocks, broadcasting,
+        |                 token ops)
         +-- types.ts     (chain-specific types)
 ```
-
-## RPC Strategies
-
-```typescript
-// Failover: try endpoints in order, fall back on failure
-{ endpoints: ['rpc1', 'rpc2'], strategy: 'failover' }
-
-// Round-robin: distribute requests across endpoints
-{ endpoints: ['rpc1', 'rpc2', 'rpc3'], strategy: 'round-robin' }
-
-// Fastest: race all endpoints, use the first successful response
-{ endpoints: ['rpc1', 'rpc2'], strategy: 'fastest' }
-```
-
-All strategies include automatic retry (configurable `retries`, default 2) and per-request timeout (configurable `timeout`, default 10000ms). JSON-RPC errors are not retried -- only network/timeout failures trigger retries.
-
-## Key Management
-
-- **BIP39 mnemonic**: 12 or 24 word phrases (128/256 bit entropy)
-- **BIP32/44 HD derivation**: Standard derivation paths per chain (e.g., `m/44'/60'/0'/0/0` for Ethereum)
-- **Raw private key**: Direct hex-encoded private key input
-- **WIF**: Bitcoin Wallet Import Format
-- **Address validation**: Per-chain format validation (EIP-55 checksum, bech32, base58, base58check, SS58, etc.)
-
-## Testnet Verification
-
-26 chains verified with real testnet RPC connectivity and address derivation:
-
-| Chain | Testnet | Status |
-|-------|---------|--------|
-| Ethereum | Sepolia | Verified |
-| Bitcoin | Testnet | Verified |
-| Solana | Devnet | Verified |
-| Tron | Shasta | Verified |
-| TON | Testnet | Verified |
-| Cosmos | Theta Testnet | Verified |
-| Aptos | Devnet | Verified |
-| Sui | Devnet | Verified |
-| NEAR | Testnet | Verified |
-| XRP | Testnet | Verified |
-| Stellar | Testnet | Verified |
-| Stacks | Testnet | Verified |
-| Kaia | Kairos | Verified |
-| EOS | Jungle4 | Verified |
-| Cardano | Preview | Verified |
-| StarkNet | Sepolia | Verified |
-| Hedera | Testnet | Verified |
-| Filecoin | Calibration | Verified |
-| ICP | Mainnet Rosetta | Verified |
-| Algorand | Testnet | Verified |
-| VeChain | Testnet | Verified |
-| Tezos | Ghostnet | Verified |
-| Theta | Testnet | Verified |
-| MultiversX | Testnet | Verified |
-| Polkadot | Westend | Verified |
-| Mina | Devnet | Verified |
 
 ## License
 

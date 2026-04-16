@@ -1,0 +1,252 @@
+# ChainKit
+
+## What is ChainKit?
+Multi-chain wallet SDK. 30 blockchains, unified API, zero external chain SDK dependencies.
+All crypto via Cure53-audited @noble/@scure libraries. Pure TypeScript.
+
+## Installation
+npm install @chainkit/client @chainkit/ethereum @chainkit/bitcoin @chainkit/solana
+# Install only the chains you need. Full list:
+# @chainkit/{ethereum,bitcoin,solana,tron,ton,cosmos,aptos,sui,near,cardano,
+#   xrp,stellar,starknet,stacks,kaia,eos,polkadot,hedera,filecoin,icp,
+#   algorand,vechain,tezos,theta,multiversx,iota,neo,flow,icon,mina}
+
+## Quick Example
+
+```typescript
+import { createClient } from '@chainkit/client'
+import { ethereum } from '@chainkit/ethereum'
+
+const client = await createClient({
+  chains: {
+    ethereum: {
+      chain: ethereum,
+      rpcs: ['https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY'],
+      privateKey: '0x...',
+    },
+  },
+})
+
+// Read
+const balance = await client.ethereum.getBalance('0x...')
+
+// Write (auto nonce + fee + sign + broadcast)
+const txHash = await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
+
+// Wait for confirmation
+const confirmed = await client.ethereum.waitForTransaction(txHash)
+
+// Clean up key material
+client.ethereum.destroy()
+```
+
+## API Reference
+
+### ChainSigner
+Every chain signer implements these methods:
+- generateMnemonic(strength?: number): string -- 128=12 words, 256=24 words
+- validateMnemonic(mnemonic: string): boolean
+- derivePrivateKey(mnemonic: string, hdPath: string): Promise<string> | string
+- getAddress(privateKey: string): string
+- validateAddress(address: string): boolean
+- signTransaction(params: { privateKey: string, tx: UnsignedTx }): Promise<string>
+- signMessage(params: { privateKey: string, message: string | Uint8Array }): Promise<string> | string
+- getDefaultHdPath(): string
+
+Usage:
+```typescript
+import { EthereumSigner } from '@chainkit/ethereum'
+const signer = new EthereumSigner()
+const mnemonic = signer.generateMnemonic()
+const pk = await signer.derivePrivateKey(mnemonic, signer.getDefaultHdPath())
+const address = signer.getAddress(pk)
+const signed = await signer.signTransaction({
+  privateKey: pk,
+  tx: { to: '0x...', value: '1000', fee: { gasLimit: '0x5208' }, extra: { chainId: 1 } },
+})
+```
+
+### ChainProvider
+Every chain provider implements:
+- getBalance(address: string): Promise<{ address, amount, symbol, decimals }>
+- getNonce(address: string): Promise<string | number>
+- getTransaction(hash: string): Promise<TransactionInfo | null>
+- getBlock(hashOrNumber: string | number): Promise<BlockInfo | null>
+- estimateFee(): Promise<{ slow, average, fast, unit }>
+- broadcastTransaction(signedTx: string): Promise<string>
+- getChainInfo(): Promise<{ chainId, name, symbol, decimals, testnet, blockHeight }>
+- waitForTransaction(hash: string, options?: { timeoutMs?, intervalMs? }): Promise<TransactionInfo>
+
+Usage:
+```typescript
+import { EthereumProvider } from '@chainkit/ethereum'
+const provider = new EthereumProvider({
+  endpoints: ['https://eth-mainnet.example.com'],
+  strategy: 'failover',
+  timeout: 10000,
+  retries: 2,
+})
+const balance = await provider.getBalance('0x...')
+```
+
+### Capabilities (optional chain extensions)
+- ContractCapable: callContract(address, method, params), estimateGas(address, method, params)
+- TokenCapable: getTokenBalance(address, tokenAddress), getTokenMetadata(tokenAddress), getMultipleTokenBalances(address, tokenAddresses[])
+- UtxoCapable: getUtxos(address), selectUtxos(address, targetAmount)
+- SubscriptionCapable: subscribeBlocks(callback), subscribeTransactions(address, callback)
+- EvmSignerCapable: signTypedData({ privateKey, domain, types, primaryType, message }) -- EIP-712, available on Ethereum and Kaia signers
+
+### Unified Client
+```typescript
+import { createClient } from '@chainkit/client'
+import { ethereum } from '@chainkit/ethereum'
+
+const client = await createClient({
+  chains: {
+    ethereum: {
+      chain: ethereum,
+      rpcs: ['https://...'],
+      privateKey: '0x...',        // omit for read-only
+      network: 'mainnet',         // 'mainnet' | 'testnet'
+      strategy: 'failover',       // 'failover' | 'round-robin' | 'fastest'
+      mnemonic: '...',            // alternative to privateKey
+      hdPath: "m/44'/60'/0'/0/0", // optional, uses chain default
+    },
+  },
+})
+
+// Read methods (all chains)
+client.ethereum.getBalance(address)
+client.ethereum.getTransaction(hash)
+client.ethereum.getBlock(numberOrHash)
+client.ethereum.estimateFee()
+client.ethereum.getChainInfo()
+client.ethereum.waitForTransaction(hash, { timeoutMs: 60000, intervalMs: 3000 })
+
+// Write methods (when privateKey or mnemonic provided)
+client.ethereum.send({ to, amount, memo?, data?, options? })  // auto nonce+fee, sign, broadcast
+client.ethereum.prepareTransaction({ to, amount })             // build unsigned tx only
+client.ethereum.signTransaction({ privateKey, tx })            // low-level sign
+client.ethereum.signMessage({ privateKey, message })           // sign message
+client.ethereum.getAddress()                                   // derived address
+
+// Lifecycle
+client.ethereum.destroy()     // zero out stored key material
+client.ethereum.provider      // access underlying ChainProvider
+client.ethereum.signer        // access underlying ChainSigner
+```
+
+Security: signing clients using 'fastest' strategy are automatically downgraded to 'failover'.
+
+### ABI Encoder
+```typescript
+import { encodeFunctionCall, decodeFunctionResult, ERC20 } from '@chainkit/core'
+
+// Encode function call
+const data = encodeFunctionCall('transfer(address,uint256)', ['0x...', 1000000n])
+
+// ERC-20 presets
+encodeFunctionCall(ERC20.transfer, ['0x...', 1000000n])
+encodeFunctionCall(ERC20.approve, ['0x...', 1000000n])
+encodeFunctionCall(ERC20.balanceOf, ['0x...'])
+// Also: ERC20.allowance, ERC20.totalSupply, ERC20.decimals, ERC20.symbol, ERC20.name
+
+// Decode return data
+const [balance] = decodeFunctionResult(['uint256'], returnHex)
+
+// Supported types: address, uint*, int*, bool, bytes32, string, bytes
+// Limitation: dynamic arrays (uint256[]) not supported
+```
+
+### SecureKey
+```typescript
+import { SecureKey } from '@chainkit/core'
+const key = new SecureKey('0xabc...')  // or Uint8Array
+key.hex      // '0xabc...'
+key.bytes    // Uint8Array
+key.destroy() // zeros key material, .hex/.bytes throw after this
+key.isDestroyed // true
+```
+
+### Default HD Paths
+| Chain | HD Path |
+|-------|---------|
+| Ethereum | m/44'/60'/0'/0/0 |
+| Bitcoin (mainnet) | m/84'/0'/0'/0/0 |
+| Bitcoin (testnet) | m/84'/1'/0'/0/0 |
+| Solana | m/44'/501'/0'/0' |
+| Tron | m/44'/195'/0'/0/0 |
+| TON | m/44'/607'/0'/0'/0' |
+| Cosmos | m/44'/118'/0'/0/0 |
+| Aptos | m/44'/637'/0'/0'/0' |
+| Sui | m/44'/784'/0'/0'/0' |
+| NEAR | m/44'/397'/0' |
+| Cardano | m/1852'/1815'/0'/0/0 |
+| XRP | m/44'/144'/0'/0/0 |
+| Stellar | m/44'/148'/0' |
+| StarkNet | m/44'/9004'/0'/0/0 |
+| Stacks | m/44'/5757'/0'/0/0 |
+| Kaia | m/44'/8217'/0'/0/0 |
+| EOS | m/44'/194'/0'/0/0 |
+| Polkadot | m/44'/354'/0'/0/0 |
+| Hedera | m/44'/3030'/0'/0/0 |
+| Filecoin | m/44'/461'/0'/0/0 |
+| ICP | m/44'/223'/0'/0/0 |
+| Algorand | m/44'/283'/0'/0/0 |
+| VeChain | m/44'/818'/0'/0/0 |
+| Tezos | m/44'/1729'/0'/0' |
+| Theta | m/44'/500'/0'/0/0 |
+| MultiversX | m/44'/508'/0'/0'/0' |
+| IOTA | m/44'/4218'/0'/0'/0' |
+| Neo | m/44'/888'/0'/0/0 |
+| Flow | m/44'/539'/0'/0/0 |
+| Icon | m/44'/4801074'/0'/0/0 |
+| Mina | m/44'/12586'/0'/0/0 |
+
+### Signature Algorithms
+| Category | Curve | Chains |
+|----------|-------|--------|
+| Secp256k1 | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, EOS, Filecoin, VeChain, Theta, Icon |
+| ED25519 | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar, Hedera, ICP, Algorand, Tezos, MultiversX, IOTA |
+| SR25519 | Schnorrkel/Ristretto | Polkadot |
+| STARK | Stark curve | StarkNet |
+| Secp256r1 | NIST P-256 ECDSA | Neo |
+| ECDSA_P256 | ECDSA P-256 | Flow |
+| Pasta | Pallas curve Schnorr | Mina |
+
+## Security
+- All crypto via Cure53-audited @noble/@scure libraries
+- Private key zeroing via SecureKey (Uint8Array, explicit destroy())
+- Address validation before signing
+- ChainId required for EVM transactions (no cross-chain replay)
+- strictHttps option for RPC endpoints
+- Nonce mutex for concurrent sends
+- RPC response ID validation
+- URL redaction in error messages (prevents API key leakage)
+- Bitcoin fee sanity check (max 50% of input value)
+- Network enforcement (Bitcoin mainnet/testnet address validation)
+- Strategy auto-downgrade (fastest -> failover for signing clients)
+- Input sanitization (strips outputs/inputs from send options)
+- Full audit report: docs/security-audit-report-2026-04.md
+
+## Limitations
+- 4/30 chains not testnet-verified for balance/tx (Neo, Flow, Icon, IOTA) -- address derivation verified for all 30
+- No mainnet verification yet
+- ABI encoder does not support dynamic arrays (uint256[])
+- Hedera requires HederaEcdsaSigner for EVM relay mode (default HederaSigner uses ED25519)
+- Subscriptions are poll-based (HTTP), not WebSocket
+- EIP-712 signTypedData available on Ethereum and Kaia signers only
+
+## RPC Strategies
+- failover: try endpoints in order, fall back on failure
+- round-robin: distribute across endpoints
+- fastest: race all endpoints, use first response
+- All strategies: auto-retry on network errors (configurable retries, default 2), per-request timeout (default 10000ms)
+- strictHttps: true rejects non-HTTPS endpoints (except localhost)
+
+## Error Handling
+All errors are ChainKitError with a code property:
+- NETWORK_ERROR, TIMEOUT, INVALID_PARAMS, INVALID_ADDRESS, INVALID_MNEMONIC
+- INVALID_PATH, INVALID_PRIVATE_KEY, TRANSACTION_FAILED, INSUFFICIENT_BALANCE
+- RPC_ALL_FAILED, RPC_ERROR, RPC_INVALID_RESPONSE
+- UNSUPPORTED_CHAIN, UNSUPPORTED_FEATURE, SIGNING_FAILED, UNKNOWN
