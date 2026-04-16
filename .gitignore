@@ -4,9 +4,8 @@ dist/
 *.tsbuildinfo
 .DS_Store
 
-# Internal docs (security audit, design specs, plans)
-docs/superpowers/
-docs/security-audit-report-*.md
+# Internal docs
+docs/
 
 # Internal test scripts (contain test mnemonics, faucet logic, TX hashes)
 scripts/
