@@ -33,6 +33,532 @@ export interface HederaMirrorNodeConfig {
 }
 
 /**
+ * Configuration for the Hedera JSON-RPC Relay provider.
+ * Uses the Hashio JSON-RPC Relay for EVM-compatible interactions.
+ */
+export interface HederaRelayConfig {
+  /** JSON-RPC Relay URL (e.g., "https://testnet.hashio.io/api") */
+  relayUrl: string
+  /** Optional Mirror Node base URL for supplementary queries */
+  mirrorNodeUrl?: string
+  /** Request timeout in milliseconds (default: 15000) */
+  timeout?: number
+}
+
+/**
+ * Parse a hex string to a BigInt.
+ */
+function hexToBigInt(hex: string): bigint {
+  if (!hex || hex === '0x' || hex === '0x0') return 0n
+  return BigInt(hex)
+}
+
+/**
+ * Parse a hex string to a number.
+ */
+function hexToNumber(hex: string): number {
+  if (!hex || hex === '0x' || hex === '0x0') return 0
+  return Number(BigInt(hex))
+}
+
+/**
+ * Hedera JSON-RPC Relay provider.
+ * Uses the Hashio relay for EVM-compatible JSON-RPC calls (eth_*).
+ * This allows sending EVM transactions signed with secp256k1/ECDSA keys.
+ */
+export class HederaRelayProvider
+  implements ChainProvider, ContractCapable, SubscriptionCapable
+{
+  private readonly relayUrl: string
+  private readonly mirrorNodeUrl: string | null
+  private readonly timeout: number
+  private rpcId = 0
+
+  constructor(config: HederaRelayConfig) {
+    this.relayUrl = config.relayUrl.replace(/\/+$/, '')
+    this.mirrorNodeUrl = config.mirrorNodeUrl?.replace(/\/+$/, '') ?? null
+    this.timeout = config.timeout ?? 15000
+  }
+
+  /**
+   * Make a JSON-RPC call to the relay.
+   */
+  private async rpcCall<T>(method: string, params: unknown[] = []): Promise<T> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(this.relayUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: ++this.rpcId,
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new ChainKitError(
+          ErrorCode.RPC_ERROR,
+          `Relay request failed: ${response.status} ${response.statusText} - ${body}`,
+          { method, status: response.status },
+        )
+      }
+
+      const data = (await response.json()) as { result?: T; error?: { code: number; message: string; data?: unknown } }
+
+      if (data.error) {
+        throw new ChainKitError(
+          ErrorCode.RPC_ERROR,
+          `Relay RPC error: ${data.error.message}`,
+          { method, code: data.error.code, data: data.error.data },
+        )
+      }
+
+      return data.result as T
+    } catch (error) {
+      if (error instanceof ChainKitError) throw error
+      if ((error as Error).name === 'AbortError') {
+        throw new ChainKitError(
+          ErrorCode.RPC_ERROR,
+          `Relay request timed out after ${this.timeout}ms`,
+          { method },
+        )
+      }
+      throw new ChainKitError(
+        ErrorCode.RPC_ERROR,
+        `Relay request failed: ${(error as Error).message}`,
+        { method },
+      )
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  /**
+   * Make an HTTP GET request to the Mirror Node API (optional, for supplementary data).
+   */
+  private async mirrorGet<T>(path: string): Promise<T> {
+    if (!this.mirrorNodeUrl) {
+      throw new ChainKitError(
+        ErrorCode.RPC_ERROR,
+        'Mirror Node URL not configured for this operation',
+      )
+    }
+    const url = `${this.mirrorNodeUrl}${path}`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new ChainKitError(
+          ErrorCode.RPC_ERROR,
+          `Mirror Node request failed: ${response.status} ${response.statusText} - ${body}`,
+          { url, status: response.status },
+        )
+      }
+
+      return (await response.json()) as T
+    } catch (error) {
+      if (error instanceof ChainKitError) throw error
+      throw new ChainKitError(
+        ErrorCode.RPC_ERROR,
+        `Mirror Node request failed: ${(error as Error).message}`,
+        { url },
+      )
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  // ------- ChainProvider -------
+
+  /**
+   * Get the HBAR balance of an EVM address via the relay.
+   * Returns balance in weibars (10^-18 HBAR, matching EVM 18-decimal convention).
+   * @param address - EVM address (0x format)
+   */
+  async getBalance(address: Address): Promise<Balance> {
+    const result = await this.rpcCall<string>('eth_getBalance', [address, 'latest'])
+    const weibars = hexToBigInt(result)
+
+    return {
+      address,
+      amount: weibars.toString(),
+      symbol: 'HBAR',
+      decimals: 18,
+    }
+  }
+
+  /**
+   * Get transaction details by hash.
+   * @param hash - EVM transaction hash (0x format)
+   */
+  async getTransaction(hash: TxHash): Promise<TransactionInfo | null> {
+    const tx = await this.rpcCall<Record<string, string> | null>(
+      'eth_getTransactionByHash',
+      [hash],
+    )
+
+    if (!tx) return null
+
+    let status: 'pending' | 'confirmed' | 'failed' = 'pending'
+    let fee = '0'
+    if (tx.blockNumber) {
+      const receipt = await this.rpcCall<Record<string, string> | null>(
+        'eth_getTransactionReceipt',
+        [hash],
+      )
+      if (receipt) {
+        status = receipt.status === '0x1' ? 'confirmed' : 'failed'
+        const gasUsed = hexToBigInt(receipt.gasUsed)
+        const effectiveGasPrice = hexToBigInt(receipt.effectiveGasPrice ?? tx.gasPrice)
+        fee = (gasUsed * effectiveGasPrice).toString()
+      }
+    }
+
+    let timestamp: number | null = null
+    if (tx.blockHash && tx.blockHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+      const block = await this.rpcCall<Record<string, string> | null>(
+        'eth_getBlockByHash',
+        [tx.blockHash, false],
+      )
+      if (block) {
+        timestamp = hexToNumber(block.timestamp)
+      }
+    }
+
+    return {
+      hash: tx.hash,
+      from: tx.from,
+      to: tx.to ?? null,
+      value: hexToBigInt(tx.value).toString(),
+      fee,
+      blockNumber: tx.blockNumber ? hexToNumber(tx.blockNumber) : null,
+      blockHash: tx.blockHash ?? null,
+      status,
+      timestamp,
+      data: tx.input !== '0x' ? tx.input : undefined,
+      nonce: hexToNumber(tx.nonce),
+    }
+  }
+
+  /**
+   * Get block details by number or hash.
+   */
+  async getBlock(hashOrNumber: string | number): Promise<BlockInfo | null> {
+    let block: Record<string, unknown> | null
+
+    if (typeof hashOrNumber === 'number') {
+      const blockTag = '0x' + hashOrNumber.toString(16)
+      block = await this.rpcCall<Record<string, unknown> | null>(
+        'eth_getBlockByNumber',
+        [blockTag, false],
+      )
+    } else if (hashOrNumber.startsWith('0x') && hashOrNumber.length === 66) {
+      block = await this.rpcCall<Record<string, unknown> | null>(
+        'eth_getBlockByHash',
+        [hashOrNumber, false],
+      )
+    } else {
+      block = await this.rpcCall<Record<string, unknown> | null>(
+        'eth_getBlockByNumber',
+        [hashOrNumber, false],
+      )
+    }
+
+    if (!block) return null
+
+    return {
+      number: hexToNumber(block.number as string),
+      hash: block.hash as string,
+      parentHash: block.parentHash as string,
+      timestamp: hexToNumber(block.timestamp as string),
+      transactions: (block.transactions as string[]) ?? [],
+    }
+  }
+
+  /**
+   * Get the EVM nonce (transaction count) for an address.
+   * @param address - EVM address (0x format)
+   */
+  async getNonce(address: Address): Promise<number> {
+    const result = await this.rpcCall<string>('eth_getTransactionCount', [address, 'latest'])
+    return hexToNumber(result)
+  }
+
+  /**
+   * Estimate transaction fees via the relay.
+   * Uses eth_gasPrice for legacy-style gas pricing.
+   */
+  async estimateFee(): Promise<FeeEstimate> {
+    const gasPriceHex = await this.rpcCall<string>('eth_gasPrice', [])
+    const gasPrice = hexToBigInt(gasPriceHex)
+
+    // Hedera relay returns a fixed gas price; we provide slight variations
+    const slow = gasPrice
+    const average = gasPrice
+    const fast = (gasPrice * 120n) / 100n
+
+    return {
+      slow: slow.toString(),
+      average: average.toString(),
+      fast: fast.toString(),
+      unit: 'weibars',
+    }
+  }
+
+  /**
+   * Broadcast a signed EVM transaction via the relay.
+   * @param signedTx - Hex-encoded signed EVM transaction (RLP-encoded with signature)
+   * @returns Transaction hash
+   */
+  async broadcastTransaction(signedTx: HexString): Promise<TxHash> {
+    const txHash = await this.rpcCall<string>('eth_sendRawTransaction', [signedTx])
+    return txHash
+  }
+
+  /**
+   * Get chain/network information via the relay.
+   */
+  async getChainInfo(): Promise<ChainInfo> {
+    const [chainIdHex, blockNumberHex] = await Promise.all([
+      this.rpcCall<string>('eth_chainId', []),
+      this.rpcCall<string>('eth_blockNumber', []),
+    ])
+
+    const chainId = hexToNumber(chainIdHex)
+    const blockHeight = hexToNumber(blockNumberHex)
+
+    const chainNames: Record<number, { name: string; testnet: boolean }> = {
+      295: { name: 'Hedera Mainnet', testnet: false },
+      296: { name: 'Hedera Testnet', testnet: true },
+      297: { name: 'Hedera Previewnet', testnet: true },
+    }
+
+    const info = chainNames[chainId] ?? {
+      name: `Hedera EVM Chain ${chainId}`,
+      testnet: chainId !== 295,
+    }
+
+    return {
+      chainId: chainId.toString(),
+      name: info.name,
+      symbol: 'HBAR',
+      decimals: 18,
+      testnet: info.testnet,
+      blockHeight,
+    }
+  }
+
+  // ------- ContractCapable -------
+
+  /**
+   * Call a read-only smart contract method via the relay.
+   * @param contractAddress - EVM contract address (0x format)
+   * @param method - Pre-encoded call data (0x...)
+   * @param params - Unused (data should be pre-encoded)
+   */
+  async callContract(
+    contractAddress: Address,
+    method: string,
+    params?: unknown[],
+  ): Promise<unknown> {
+    const data = method.startsWith('0x') ? method : `0x${method}`
+
+    return this.rpcCall<string>('eth_call', [
+      { to: contractAddress, data },
+      'latest',
+    ])
+  }
+
+  /**
+   * Estimate gas for a contract call via the relay.
+   */
+  async estimateGas(
+    contractAddress: Address,
+    method: string,
+    params?: unknown[],
+  ): Promise<string> {
+    const data = method.startsWith('0x') ? method : `0x${method}`
+
+    const result = await this.rpcCall<string>('eth_estimateGas', [
+      { to: contractAddress, data },
+    ])
+
+    return hexToBigInt(result).toString()
+  }
+
+  // ------- SubscriptionCapable -------
+
+  /**
+   * Subscribe to new blocks via polling.
+   */
+  async subscribeBlocks(
+    callback: (blockNumber: number) => void,
+  ): Promise<Unsubscribe> {
+    let lastBlockNumber = 0
+    let active = true
+
+    const poll = async () => {
+      while (active) {
+        try {
+          const blockHex = await this.rpcCall<string>('eth_blockNumber', [])
+          const blockNumber = hexToNumber(blockHex)
+
+          if (blockNumber > lastBlockNumber) {
+            lastBlockNumber = blockNumber
+            callback(blockNumber)
+          }
+        } catch {
+          // Silently ignore polling errors
+        }
+
+        if (active) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+      }
+    }
+
+    poll()
+
+    return () => {
+      active = false
+    }
+  }
+
+  /**
+   * Subscribe to transactions for an EVM address via polling.
+   */
+  async subscribeTransactions(
+    address: Address,
+    callback: (tx: TransactionInfo) => void,
+  ): Promise<Unsubscribe> {
+    let lastBlockNumber = 0
+    let active = true
+    const normalizedAddress = address.toLowerCase()
+
+    const poll = async () => {
+      while (active) {
+        try {
+          const blockHex = await this.rpcCall<string>('eth_blockNumber', [])
+          const currentBlock = hexToNumber(blockHex)
+
+          if (currentBlock > lastBlockNumber) {
+            for (
+              let blockNum = lastBlockNumber + 1;
+              blockNum <= currentBlock && active;
+              blockNum++
+            ) {
+              const block = await this.rpcCall<Record<string, unknown>>(
+                'eth_getBlockByNumber',
+                ['0x' + blockNum.toString(16), true],
+              )
+
+              if (block && Array.isArray(block.transactions)) {
+                for (const tx of block.transactions as Record<string, string>[]) {
+                  if (
+                    tx.from?.toLowerCase() === normalizedAddress ||
+                    tx.to?.toLowerCase() === normalizedAddress
+                  ) {
+                    const txInfo = await this.getTransaction(tx.hash)
+                    if (txInfo) {
+                      callback(txInfo)
+                    }
+                  }
+                }
+              }
+            }
+            lastBlockNumber = currentBlock
+          }
+        } catch {
+          // Silently ignore polling errors
+        }
+
+        if (active) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+      }
+    }
+
+    try {
+      const blockHex = await this.rpcCall<string>('eth_blockNumber', [])
+      lastBlockNumber = hexToNumber(blockHex)
+    } catch {
+      // Start from 0
+    }
+
+    poll()
+
+    return () => {
+      active = false
+    }
+  }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
+
+  // ------- Relay-specific utilities -------
+
+  /**
+   * Look up the EVM address for a Hedera account ID via the mirror node.
+   * @param accountId - Hedera account ID (e.g., "0.0.12345")
+   * @returns EVM address (0x format) or null
+   */
+  async lookupEvmAddress(accountId: string): Promise<string | null> {
+    try {
+      const account = await this.mirrorGet<{
+        evm_address: string
+        alias: string
+      }>(`/api/v1/accounts/${accountId}`)
+      return account.evm_address || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Get the account key type from mirror node.
+   * @param accountId - Hedera account ID
+   * @returns Key type info or null
+   */
+  async getAccountKeyType(accountId: string): Promise<{ type: string; key: string } | null> {
+    try {
+      const account = await this.mirrorGet<{
+        key: { _type: string; key: string }
+      }>(`/api/v1/accounts/${accountId}`)
+      return { type: account.key._type, key: account.key.key }
+    } catch {
+      return null
+    }
+  }
+}
+
+/**
  * Hedera provider implementing ChainProvider, ContractCapable,
  * TokenCapable, and SubscriptionCapable interfaces.
  *
