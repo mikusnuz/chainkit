@@ -1157,8 +1157,6 @@ Hedera provides two signers:
 
 ## Security
 
-Full audit report: [`docs/security-audit-report-2026-04.md`](docs/security-audit-report-2026-04.md)
-
 Key security properties:
 
 - **No third-party chain SDKs** -- eliminates supply chain attack surface
@@ -1176,50 +1174,7 @@ Key security properties:
 - **Strategy auto-downgrade** -- signing clients using `fastest` strategy automatically downgrade to `failover`
 - **Input sanitization** -- `send()` strips signing-critical fields (`outputs`, `inputs`) from user-provided options
 
-Audit summary: 24 findings (18 initial + 6 cross-check), 22 remediated, 2 accepted as known risks with documented justification. See audit report for details.
-
-## Testnet Verification
-
-24/30 chains have been verified with real testnet transactions. 30/30 chains have verified address derivation.
-
-| Chain | Testnet | Address | Balance | Tx Send |
-|-------|---------|---------|---------|---------|
-| Ethereum | Sepolia | PASS | PASS | PASS |
-| Bitcoin | Testnet | PASS | PASS | PASS |
-| Solana | Devnet | PASS | PASS | PASS |
-| Tron | Shasta | PASS | PASS | PASS |
-| TON | Testnet | PASS | PASS | PASS |
-| Cosmos | Theta Testnet | PASS | PASS | PASS |
-| Aptos | Devnet | PASS | PASS | PASS |
-| Sui | Devnet | PASS | PASS | PASS |
-| NEAR | Testnet | PASS | PASS | PASS |
-| XRP | Testnet | PASS | PASS | PASS |
-| Stellar | Testnet | PASS | PASS | PASS |
-| Stacks | Testnet | PASS | PASS | PASS |
-| Kaia | Kairos | PASS | PASS | PASS |
-| EOS | Jungle4 | PASS | PASS | PASS |
-| Cardano | Preview | PASS | PASS | PASS |
-| StarkNet | Sepolia | PASS | PASS | PASS |
-| Hedera | Testnet | PASS | PASS | PASS |
-| Filecoin | Calibration | PASS | PASS | PASS |
-| ICP | Mainnet Rosetta | PASS | PASS | PASS |
-| Algorand | Testnet | PASS | PASS | PASS |
-| VeChain | Testnet | PASS | PASS | PASS |
-| Tezos | Ghostnet | PASS | PASS | PASS |
-| Theta | Testnet | PASS | PASS | PASS |
-| MultiversX | Testnet | PASS | PASS | PASS |
-| Polkadot | Westend | PASS | PASS | N/A |
-| Mina | Devnet | PASS | PASS | N/A |
-| Neo | N/A | PASS | N/A | N/A |
-| Flow | N/A | PASS | N/A | N/A |
-| Icon | N/A | PASS | N/A | N/A |
-| IOTA | N/A | PASS | N/A | N/A |
-
-**Not yet verified on testnet (4 chains):** Neo, Flow, Icon, IOTA -- no accessible public testnet RPC at time of audit. Address derivation is verified for all 4.
-
-**Polkadot and Mina:** Balance queries verified, but transaction send requires native token deposits not available via faucet at time of testing.
-
-No mainnet verification has been performed.
+Independently audited with 24 security findings identified and remediated.
 
 ## Playground
 

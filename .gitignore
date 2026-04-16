@@ -3,4 +3,14 @@ dist/
 .turbo/
 *.tsbuildinfo
 .DS_Store
+
+# Internal docs (security audit, design specs, plans)
 docs/superpowers/
+docs/security-audit-report-*.md
+
+# Internal test scripts (contain test mnemonics, faucet logic, TX hashes)
+scripts/
+transfer.mjs
+
+# Playground build output
+playground/dist/
