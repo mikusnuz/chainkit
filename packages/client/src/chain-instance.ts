@@ -40,8 +40,13 @@ function createFullInstance(
 ): FullChainInstance {
   const readOnly = createReadOnlyInstance(provider)
 
-  // Store key material in a SecureKey so it can be zeroed on destroy()
+  // SA-008: Store key material in SecureKey (Uint8Array) instead of string
+  // All key usage goes through secureKey — the original string param is not referenced after this
   const secureKey = new SecureKey(privateKey)
+
+  function getKey(): string {
+    return secureKey.hex
+  }
 
   // SA-013: Nonce mutex for concurrent sends
   let localNonce: number | null = null
@@ -50,7 +55,7 @@ function createFullInstance(
   async function getNextNonce(): Promise<number> {
     nonceMutex = nonceMutex.then(async () => {
       if (localNonce === null) {
-        const from = signer.getAddress(privateKey)
+        const from = signer.getAddress(getKey())
         const n = await provider.getNonce(from)
         localNonce = typeof n === 'number' ? n : parseInt(String(n), 10)
       }
@@ -78,7 +83,7 @@ function createFullInstance(
     // SA-003: Validate recipient address
     validateRecipientAddress(params.to)
 
-    const from = signer.getAddress(privateKey)
+    const from = signer.getAddress(getKey())
 
     // SA-013: Use nonce mutex for concurrent send safety
     // SA-018: Note — when using 'fastest' RPC strategy, nonce and fee
@@ -133,7 +138,7 @@ function createFullInstance(
       const tx = await buildUnsignedTx(params)
 
       // Sign and broadcast
-      const signed = await signer.signTransaction({ privateKey, tx })
+      const signed = await signer.signTransaction({ privateKey: getKey(), tx })
       return provider.broadcastTransaction(signed)
     },
 
@@ -141,7 +146,7 @@ function createFullInstance(
     signMessage: (msgParams) => signer.signMessage(msgParams),
 
     getAddress(): string {
-      return signer.getAddress(privateKey)
+      return signer.getAddress(getKey())
     },
 
     destroy(): void {
@@ -159,23 +164,20 @@ function createFullInstance(
 export async function createChainInstance(
   config: ChainConfig,
 ): Promise<ReadOnlyChainInstance | FullChainInstance> {
+  // XC-005: Auto-downgrade 'fastest' to 'failover' for signing clients.
+  // 'fastest' accepts the first RPC response without consensus — a rogue
+  // endpoint could return manipulated nonce or fee data for signing.
+  const hasSigning = !!(config.privateKey || config.mnemonic)
+  const safeStrategy = (config.strategy === 'fastest' && hasSigning)
+    ? 'failover'
+    : config.strategy
+
   const provider = new config.chain.Provider({
     endpoints: config.rpcs,
-    strategy: config.strategy,
+    strategy: safeStrategy,
     timeout: config.timeout,
     retries: config.retries,
   })
-
-  // SECURITY: Warn when 'fastest' strategy is used with signing capabilities.
-  // The 'fastest' strategy accepts the first RPC response without consensus,
-  // which means a rogue endpoint could return manipulated nonce or fee data.
-  if (config.strategy === 'fastest' && (config.privateKey || config.mnemonic)) {
-    console.warn(
-      '[ChainKit] WARNING: "fastest" RPC strategy is not recommended for signing operations. ' +
-      'A rogue endpoint could manipulate nonce or fee data. ' +
-      'Consider "failover" or "round-robin" for production wallets.',
-    )
-  }
 
   // No key material -> read-only
   if (!config.privateKey && !config.mnemonic) {

@@ -17,6 +17,8 @@ export interface RpcManagerConfig {
   retries?: number
   /** Endpoint selection strategy (default: 'failover') */
   strategy?: RpcStrategy
+  /** Reject non-HTTPS endpoints (default: false). Enable for production. */
+  strictHttps?: boolean
 }
 
 /**
@@ -76,11 +78,14 @@ export class RpcManager {
     this.retries = config.retries ?? 2
     this.strategy = config.strategy ?? 'failover'
 
-    // SA-005: Warn about insecure RPC endpoints
+    // SA-005: Enforce or warn about insecure RPC endpoints
     for (const endpoint of this.endpoints) {
       const url = typeof endpoint === 'string' ? endpoint : endpoint
       if (!url.startsWith('https://') && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')) {
-        console.warn(`[ChainKit] WARNING: Insecure RPC endpoint: ${url}. Use HTTPS in production.`)
+        if (config.strictHttps) {
+          throw new ChainKitError(ErrorCode.INVALID_PARAMS, `Insecure RPC endpoint rejected (strictHttps=true): ${redactUrl(url)}`)
+        }
+        console.warn(`[ChainKit] WARNING: Insecure RPC endpoint: ${redactUrl(url)}. Use HTTPS in production or set strictHttps: true.`)
       }
     }
   }
