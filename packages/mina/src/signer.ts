@@ -15,7 +15,7 @@ import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils'
 import { base58 } from '@scure/base'
 import type { MinaSignature } from './types.js'
 import {
-  poseidonHashWithPrefix,
+  poseidonLegacyHashWithPrefix,
   packToFieldsLegacy,
   inputToBitsLegacy,
   HashInputLegacyOps,
@@ -47,6 +47,16 @@ const MINA_HD_PATH = "m/44'/12586'/0'/0/0"
  * The Pallas curve order (scalar field Fq).
  */
 const PALLAS_ORDER = pallas.CURVE.n
+
+/**
+ * Mina's generator point on Pallas curve.
+ * This differs from the standard Pallas generator used in noble-curves.
+ * Mina uses the point (1, y) where y is the even square root of (1 + 5) in Fp.
+ */
+const MINA_GENERATOR = pallas.ProjectivePoint.fromAffine({
+  x: 1n,
+  y: 12418654782883325593414442427049395787963493412651469444558597405572177144507n,
+})
 
 /**
  * Reverse the bytes of a Uint8Array (returns a new array).
@@ -276,7 +286,7 @@ function hashMessageLegacy(
 
   const prefix = signaturePrefix(networkId)
   const packed = packToFieldsLegacy(input)
-  return poseidonHashWithPrefix(prefix, packed)
+  return poseidonLegacyHashWithPrefix(prefix, packed)
 }
 
 /**
@@ -295,7 +305,7 @@ function signLegacy(
   privateKey: bigint,
   networkId: 'mainnet' | 'testnet',
 ): MinaSignature {
-  const pubPoint = pallas.ProjectivePoint.BASE.multiply(privateKey)
+  const pubPoint = MINA_GENERATOR.multiply(privateKey)
   const publicKey = { x: pubPoint.x, y: pubPoint.y }
 
   const kPrime = deriveNonceLegacy(message, publicKey, privateKey, networkId)
@@ -303,7 +313,7 @@ function signLegacy(
     throw new ChainKitError(ErrorCode.SIGNING_FAILED, 'Derived nonce is zero')
   }
 
-  const R = pallas.ProjectivePoint.BASE.multiply(kPrime)
+  const R = MINA_GENERATOR.multiply(kPrime)
   const rx = R.x
   const ry = R.y
 
@@ -461,7 +471,7 @@ export class MinaSigner implements ChainSigner {
       )
     }
 
-    const pubPoint = pallas.ProjectivePoint.BASE.multiply(pk)
+    const pubPoint = MINA_GENERATOR.multiply(pk)
     const x = pubPoint.x
     const y = pubPoint.y
 
@@ -500,7 +510,9 @@ export class MinaSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<string> {
     const { privateKey, tx } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
-    const pk = bytesToNumberBE(hexToBytes(pkHex))
+    const pkBytes = hexToBytes(pkHex)
+    try {
+    const pk = bytesToNumberBE(pkBytes)
 
     if (pk === 0n || pk >= PALLAS_ORDER) {
       throw new ChainKitError(
@@ -549,6 +561,9 @@ export class MinaSigner implements ChainSigner {
         validUntil,
       },
     })
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -579,7 +594,7 @@ export class MinaSigner implements ChainSigner {
     }
 
     // Compute R = kPrime * G with a deterministic nonce
-    const pubPoint = pallas.ProjectivePoint.BASE.multiply(pk)
+    const pubPoint = MINA_GENERATOR.multiply(pk)
     const hashBytes = new Uint8Array(numberToBytesBE(e, 32))
     const nonceInput = blake2b(
       Uint8Array.from([...hashBytes, ...new Uint8Array(numberToBytesBE(pk, 32))]),
@@ -594,7 +609,7 @@ export class MinaSigner implements ChainSigner {
     kPrime = scalarMod(kPrime)
     if (kPrime === 0n) kPrime = 1n
 
-    const R = pallas.ProjectivePoint.BASE.multiply(kPrime)
+    const R = MINA_GENERATOR.multiply(kPrime)
     const k = fieldIsEven(R.y) ? kPrime : scalarNegate(kPrime)
     const s = scalarAdd(k, scalarMul(e, pk))
 
