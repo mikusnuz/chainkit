@@ -272,7 +272,10 @@ export class VeChainSigner implements ChainSigner {
 
     // Build clause: [to, value, data]
     const toBytes = hexToBytes(stripHexPrefix(tx.to))
-    const valueBytes = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
+    const rawValue = tx.value ?? tx.amount ?? '0'
+    const valueBytes = rawValue.startsWith('0x')
+      ? hexToMinimalBytes(rawValue)
+      : decimalToMinimalBytes(rawValue)
     const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
     // Encode clause as an RLP list of its three fields
