@@ -4,6 +4,8 @@ Cross-chain wallet SDK. One unified API for 30 blockchains -- wallet creation, a
 
 Zero external chain SDK dependencies. Pure JavaScript crypto via @noble/@scure.
 
+**[Playground](https://mikusnuz.github.io/chainkit/)** | [npm](https://www.npmjs.com/package/chainkit-sdk)
+
 ## Installation
 
 ```bash
@@ -1178,17 +1180,26 @@ Independently audited with 24 security findings identified and remediated.
 
 ## Playground
 
-ChainKit includes a browser-based wallet playground for testing all 30 chains interactively. It provides:
+> **[Try it live](https://mikusnuz.github.io/chainkit/)** -- no installation required
 
-- Per-chain wallet generation from mnemonic
-- Address derivation across all signature algorithms
-- Global wallet: derive addresses for all 30 chains from a single mnemonic
-- Balance queries against testnets
+ChainKit includes a browser-based playground for testing all 30 chains interactively.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Global Wallet** | Enter one mnemonic, derive addresses for all 30 chains instantly |
+| **Per-Chain Testing** | Select any chain to test balance queries, transaction signing, RPC connectivity |
+| **Address Validation** | Real-time validation with checksum verification per chain |
+| **Copy & Explorer Links** | One-click copy addresses, direct links to block explorers |
+| **Dark Theme** | Monospace-friendly UI designed for crypto data |
+
+### Run Locally
 
 ```bash
 cd playground
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Architecture
