@@ -1,6 +1,8 @@
 # ChainKit
 
-Cross-chain abstraction SDK providing a unified API for 29 blockchains. One interface for wallet creation, transaction signing, balance queries, and token operations across all supported chains.
+Cross-chain abstraction SDK. One unified API for 29 blockchains -- wallet creation, address validation, balance queries, transaction signing, and token operations.
+
+Zero external chain SDK dependencies. Pure JavaScript crypto via @noble/@scure.
 
 ## Installation
 
@@ -17,7 +19,7 @@ import { ethereum } from '@chainkit/ethereum'
 import { bitcoin } from '@chainkit/bitcoin'
 import { solana } from '@chainkit/solana'
 
-const client = createClient({
+const client = await createClient({
   chains: {
     ethereum: {
       chain: ethereum,
@@ -45,6 +47,211 @@ await client.solana.getBalance('HAgk...')
 // Send transaction (only available when signer is configured)
 await client.ethereum.send({ to: '0x...', amount: '1000000000000000000' })
 ```
+
+## Unified API
+
+### ChainSigner (Offline -- all 29 chains)
+
+Every chain signer implements these methods identically:
+
+```typescript
+import { EthereumSigner } from '@chainkit/ethereum'
+import { BitcoinSigner } from '@chainkit/bitcoin'
+import { SolanaSigner } from '@chainkit/solana'
+
+// Works the same on ALL chains
+const signer = new EthereumSigner()
+
+// Mnemonic
+const mnemonic = signer.generateMnemonic()        // 12 words (128 bits)
+signer.generateMnemonic(256)                       // 24 words
+signer.validateMnemonic(mnemonic)                  // true/false
+
+// Key derivation
+const pk = await signer.derivePrivateKey(mnemonic, "m/44'/60'/0'/0/0")
+
+// Address
+const address = signer.getAddress(pk)
+signer.validateAddress(address)                    // true
+signer.validateAddress('invalid')                  // false
+
+// Sign transaction (unified params object)
+const signed = await signer.signTransaction({
+  privateKey: pk,
+  tx: {
+    to: '0x...',
+    value: '1000000000000000000',
+    fee: { gasLimit: '0x5208', maxFeePerGas: '0x2540be400' },
+    extra: { chainId: 1 },
+  },
+})
+
+// Sign message
+const sig = await signer.signMessage({
+  privateKey: pk,
+  message: 'Hello ChainKit',
+})
+```
+
+### ChainProvider (Online -- all 29 chains)
+
+```typescript
+import { EthereumProvider } from '@chainkit/ethereum'
+
+const provider = new EthereumProvider({
+  endpoints: ['https://eth-mainnet.example.com'],
+  strategy: 'failover',    // 'failover' | 'round-robin' | 'fastest'
+  timeout: 10000,
+  retries: 2,
+})
+
+// Balance
+const balance = await provider.getBalance('0x...')
+// { address: '0x...', amount: '1000000000000000000', decimals: 18, symbol: 'ETH' }
+
+// Nonce / sequence number
+const nonce = await provider.getNonce('0x...')
+
+// Transaction info
+const tx = await provider.getTransaction('0x...')
+
+// Block info
+const block = await provider.getBlock(12345)
+
+// Fee estimation (slow / average / fast)
+const fee = await provider.estimateFee()
+// { slow: '...', average: '...', fast: '...', unit: 'wei' }
+
+// Broadcast
+const txHash = await provider.broadcastTransaction(signedTxHex)
+
+// Chain info
+const info = await provider.getChainInfo()
+// { chainId: '1', name: 'Ethereum Mainnet', symbol: 'ETH', decimals: 18, testnet: false, blockHeight: 12345 }
+```
+
+### Capabilities (chain-specific extensions)
+
+Not all chains support all features. Capabilities are type-safe extensions:
+
+#### ContractCapable
+
+```typescript
+// EVM, Solana, Cosmos, Tron, TON, Aptos, Sui, NEAR, Tezos, etc.
+await provider.callContract(contractAddress, 'balanceOf(address)', ['0x...'])
+await provider.estimateGas(contractAddress, 'transfer(address,uint256)', ['0x...', 1000n])
+```
+
+#### TokenCapable
+
+```typescript
+// Get single token balance
+await provider.getTokenBalance(address, tokenAddress)
+
+// Get multiple token balances at once
+await provider.getMultipleTokenBalances(address, [token1, token2, token3])
+
+// Get token metadata (name, symbol, decimals, totalSupply)
+await provider.getTokenMetadata(tokenAddress)
+```
+
+#### UtxoCapable
+
+```typescript
+// Bitcoin, Cardano (eUTXO)
+await provider.getUtxos(address)
+await provider.selectUtxos(address, '100000')  // coin selection
+```
+
+#### SubscriptionCapable
+
+```typescript
+// Poll-based subscriptions
+const unsubscribe = await provider.subscribeBlocks(blockNumber => { ... })
+const unsubscribe = await provider.subscribeTransactions(address, tx => { ... })
+```
+
+#### EvmSignerCapable (EIP-712)
+
+```typescript
+// Ethereum, Kaia, VeChain, Theta, Icon
+const sig = await signer.signTypedData({
+  privateKey: pk,
+  domain: { name: 'MyDApp', version: '1', chainId: 1 },
+  types: {
+    Order: [
+      { name: 'maker', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+  },
+  primaryType: 'Order',
+  message: { maker: '0x...', amount: '1000' },
+})
+```
+
+#### Dual-Token Chains
+
+```typescript
+// VeChain (VET/VTHO), Theta (THETA/TFUEL), Neo (NEO/GAS), EOS (CPU/NET/RAM)
+await provider.getBalance(address)             // primary token
+await provider.getNativeBalances?.(address)     // all native tokens
+```
+
+### Unified Client
+
+```typescript
+import { createClient } from '@chainkit/client'
+import { ethereum } from '@chainkit/ethereum'
+import { bitcoin } from '@chainkit/bitcoin'
+
+const client = await createClient({
+  chains: {
+    ethereum: {
+      chain: ethereum,
+      rpcs: ['https://...'],
+      privateKey: '0x...',     // optional: omit for read-only
+    },
+    bitcoin: {
+      chain: bitcoin,
+      rpcs: ['https://...'],
+    },
+  },
+})
+
+// Read (all chains)
+await client.ethereum.getBalance('0x...')
+await client.ethereum.getTransaction('0x...')
+await client.ethereum.getBlock(12345)
+await client.ethereum.estimateFee()
+await client.ethereum.getChainInfo()
+
+// Write (only when privateKey or mnemonic provided)
+await client.ethereum.send({ to: '0x...', amount: '1000' })
+await client.ethereum.signTransaction({
+  privateKey: '0x...',
+  tx: { to: '0x...', value: '1000' },
+})
+await client.ethereum.signMessage({
+  privateKey: '0x...',
+  message: 'Hello',
+})
+await client.ethereum.getAddress()
+
+// Access underlying signer/provider directly
+client.ethereum.provider   // ChainProvider instance
+client.ethereum.signer     // ChainSigner instance (only when key provided)
+```
+
+## Signature Algorithm Categories
+
+| Category | Curve | Chains |
+|----------|-------|--------|
+| Secp256k1 | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, EOS, Filecoin, VeChain, Theta, Icon |
+| ED25519 | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar, Hedera, ICP, Algorand, Tezos, MultiversX, IOTA |
+| SR25519 | Schnorrkel/Ristretto | Polkadot |
+| STARK | Stark curve | StarkNet |
+| Secp256r1 | NIST P-256 ECDSA | Neo |
+| ECDSA_P256 | ECDSA P-256 | Flow |
 
 ## Packages
 
@@ -637,41 +844,81 @@ Covers Polkadot, Kusama, and all Substrate-based parachains. Supports custom SS5
 
 ---
 
-## Signature Algorithm Categories
-
-| Category | Curve | Chains |
-|----------|-------|--------|
-| **Secp256k1** | secp256k1 ECDSA | Ethereum, Bitcoin, Tron, Cosmos, XRP, Stacks, Kaia, EOS, Filecoin, VeChain, Theta, Icon |
-| **ED25519** | Ed25519 EdDSA | Solana, TON, Aptos, Sui, NEAR, Cardano, Stellar, Hedera, ICP, Algorand, Tezos, MultiversX, IOTA |
-| **SR25519** | Schnorrkel/Ristretto | Polkadot |
-| **Secp256r1** | NIST P-256 ECDSA | Neo |
-| **ECDSA_P256** | ECDSA P-256 | Flow |
-| **STARK** | Stark curve | StarkNet |
-
 ## Architecture
 
 ```
-@chainkit/client (unified API)
+@chainkit/client (unified multi-chain client)
   |
-  +-- @chainkit/core (interfaces, types, crypto, RPC manager)
+  +-- createClient() --> ReadOnlyChainInstance (no key = read-only)
+  |                  --> FullChainInstance     (key provided = read+write)
   |
-  +-- @chainkit/<chain> (signer + provider per chain)
-        |
-        +-- signer.ts   (offline: key generation, signing)
-        +-- provider.ts  (online: RPC queries, broadcasting)
+  +-- @chainkit/core
+  |     +-- ChainSigner interface   (generateMnemonic, derivePrivateKey, getAddress, signTransaction, signMessage, validateAddress)
+  |     +-- ChainProvider interface (getBalance, getTransaction, getBlock, getNonce, estimateFee, broadcastTransaction, getChainInfo)
+  |     +-- Capabilities            (ContractCapable, TokenCapable, UtxoCapable, SubscriptionCapable, EvmSignerCapable)
+  |     +-- RpcManager              (failover, round-robin, fastest)
+  |     +-- Crypto utilities        (BIP39 mnemonic, BIP32 HD derivation via @scure/bip39 + @noble/hashes)
+  |
+  +-- @chainkit/<chain>
+        +-- signer.ts   (offline: key generation, address derivation, tx signing, message signing)
+        +-- provider.ts  (online: RPC queries, balance, blocks, broadcasting, token ops)
         +-- types.ts     (chain-specific types)
 ```
 
-## Features
+## RPC Strategies
 
-- Unified `getBalance()`, `send()`, `getTransaction()` across all chains
-- Offline signer (BIP39 mnemonic, BIP32/44 HD derivation, keystore)
-- Multi-RPC with failover, round-robin, and fastest strategies
-- Read-only mode (no private key = no write methods at type level)
-- Chain-specific capabilities: `ContractCapable`, `TokenCapable`, `UtxoCapable`, `SubscriptionCapable`
-- Cross-platform: Node.js, browser, React Native
-- ESM + CJS dual build
-- Zero native dependencies (pure JS crypto via @noble/@scure)
+```typescript
+// Failover: try endpoints in order, fall back on failure
+{ endpoints: ['rpc1', 'rpc2'], strategy: 'failover' }
+
+// Round-robin: distribute requests across endpoints
+{ endpoints: ['rpc1', 'rpc2', 'rpc3'], strategy: 'round-robin' }
+
+// Fastest: race all endpoints, use the first successful response
+{ endpoints: ['rpc1', 'rpc2'], strategy: 'fastest' }
+```
+
+All strategies include automatic retry (configurable `retries`, default 2) and per-request timeout (configurable `timeout`, default 10000ms). JSON-RPC errors are not retried -- only network/timeout failures trigger retries.
+
+## Key Management
+
+- **BIP39 mnemonic**: 12 or 24 word phrases (128/256 bit entropy)
+- **BIP32/44 HD derivation**: Standard derivation paths per chain (e.g., `m/44'/60'/0'/0/0` for Ethereum)
+- **Raw private key**: Direct hex-encoded private key input
+- **WIF**: Bitcoin Wallet Import Format
+- **Address validation**: Per-chain format validation (EIP-55 checksum, bech32, base58, SS58, etc.)
+
+## Testnet Verification
+
+25 chains verified with real testnet RPC connectivity and address derivation:
+
+| Chain | Testnet | Status |
+|-------|---------|--------|
+| Ethereum | Sepolia | Verified |
+| Bitcoin | Testnet | Verified |
+| Solana | Devnet | Verified |
+| Tron | Shasta | Verified |
+| TON | Testnet | Verified |
+| Cosmos | Theta Testnet | Verified |
+| Aptos | Devnet | Verified |
+| Sui | Devnet | Verified |
+| NEAR | Testnet | Verified |
+| XRP | Testnet | Verified |
+| Stellar | Testnet | Verified |
+| Stacks | Testnet | Verified |
+| Kaia | Kairos | Verified |
+| EOS | Jungle4 | Verified |
+| Cardano | Preview | Verified |
+| StarkNet | Sepolia | Verified |
+| Hedera | Testnet | Verified |
+| Filecoin | Calibration | Verified |
+| ICP | Mainnet Rosetta | Verified |
+| Algorand | Testnet | Verified |
+| VeChain | Testnet | Verified |
+| Tezos | Ghostnet | Verified |
+| Theta | Testnet | Verified |
+| MultiversX | Testnet | Verified |
+| Polkadot | Westend | Verified |
 
 ## License
 
