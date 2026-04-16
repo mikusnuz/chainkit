@@ -158,15 +158,14 @@ describe('FlowSigner', () => {
   })
 
   describe('signTransaction', () => {
-    it('should sign a transaction with data payload', async () => {
+    it('should sign a transaction with raw data payload', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
 
-      // Simulate a Flow transaction payload (hex-encoded)
+      // Simulate a Flow transaction payload (hex-encoded), raw mode (no 'to' field)
       const payload = '0x' + Buffer.from('test-transaction-payload').toString('hex')
 
       const signature = await signer.signTransaction({ privateKey: privateKey, tx: {
           from: '0x1234567890abcdef',
-          to: '0xfedcba0987654321',
           value: '0',
           data: payload,
         } })
@@ -175,12 +174,37 @@ describe('FlowSigner', () => {
       expect(signature).toMatch(/^0x[0-9a-f]{128}$/)
     })
 
-    it('should throw if no data is provided', async () => {
+    it('should build and sign a FLOW transfer transaction', async () => {
+      const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
+
+      const result = await signer.signTransaction({ privateKey: privateKey, tx: {
+          from: '0x1234567890abcdef',
+          to: '0xfedcba0987654321',
+          value: '100000000', // 1.0 FLOW in 10^-8 units
+          extra: {
+            senderAddress: '0x1234567890abcdef',
+            sequenceNumber: 0,
+            referenceBlockId: 'a' .repeat(64),
+            fungibleTokenAddress: '0xf233dcee88fe0abe',
+            flowTokenAddress: '0x1654653399040a61',
+          },
+        } })
+
+      // Transfer mode returns a JSON string for broadcast
+      const txBody = JSON.parse(result)
+      expect(txBody).toHaveProperty('script')
+      expect(txBody).toHaveProperty('arguments')
+      expect(txBody).toHaveProperty('payer')
+      expect(txBody).toHaveProperty('envelope_signatures')
+      expect(txBody.envelope_signatures.length).toBe(1)
+    })
+
+    it('should throw if neither data nor to+value is provided', async () => {
       const privateKey = await signer.derivePrivateKey(TEST_MNEMONIC, FLOW_HD_PATH)
 
       await expect(
-        signer.signTransaction({ privateKey: privateKey, tx: { from: '0x1234567890abcdef', to: '0xfedcba0987654321', value: '0' } }),
-      ).rejects.toThrow('Transaction data')
+        signer.signTransaction({ privateKey: privateKey, tx: { from: '0x1234567890abcdef', value: '0' } }),
+      ).rejects.toThrow('must have either data')
     })
   })
 

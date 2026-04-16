@@ -266,14 +266,19 @@ export class TonProvider
    */
   async getNonce(address: Address): Promise<number> {
     try {
-      const result = await this.post<{ ok: boolean; result: { stack: Array<[string, string]> } }>('/runGetMethod', {
+      // post() already unwraps the TON API response from { ok, result } to just result
+      const result = await this.post<{ gas_used: number; exit_code: number; stack: Array<[string, string]> }>('/runGetMethod', {
         address,
         method: 'seqno',
         stack: [],
       })
-      if (result.ok && result.result.stack.length > 0) {
-        const [, value] = result.result.stack[0]
-        return parseInt(value, 16) || parseInt(value, 10) || 0
+      if (result.exit_code === 0 && result.stack && result.stack.length > 0) {
+        const [, value] = result.stack[0]
+        // TON returns hex values with 0x prefix or decimal strings
+        if (value.startsWith('0x')) {
+          return parseInt(value, 16) || 0
+        }
+        return parseInt(value, 10) || 0
       }
       return 0
     } catch {

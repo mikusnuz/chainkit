@@ -138,6 +138,135 @@ function p256DerivePath(seed: Uint8Array, path: string): Uint8Array {
   return key
 }
 
+// ------- RLP Encoding for Flow Transactions -------
+
+/**
+ * An RLP item is either a byte array or a list of RLP items.
+ */
+type RlpItem = Uint8Array | RlpItem[]
+
+/**
+ * RLP encode a single item (byte array or nested list).
+ *
+ * RLP encoding rules:
+ * - Single byte 0x00..0x7f: encode as itself
+ * - String 0..55 bytes: 0x80 + length, then data
+ * - String >55 bytes: 0xb7 + length-of-length, then length (big-endian), then data
+ * - List total payload 0..55 bytes: 0xc0 + payload length, then payload
+ * - List total payload >55 bytes: 0xf7 + length-of-length, then length, then payload
+ */
+function rlpEncode(item: RlpItem): Uint8Array {
+  if (item instanceof Uint8Array) {
+    return rlpEncodeBytes(item)
+  }
+
+  // It's a list
+  const encodedItems = item.map(sub => rlpEncode(sub))
+  const totalLen = encodedItems.reduce((s, e) => s + e.length, 0)
+  const payload = new Uint8Array(totalLen)
+  let offset = 0
+  for (const enc of encodedItems) {
+    payload.set(enc, offset)
+    offset += enc.length
+  }
+
+  if (totalLen <= 55) {
+    const result = new Uint8Array(1 + totalLen)
+    result[0] = 0xc0 + totalLen
+    result.set(payload, 1)
+    return result
+  }
+
+  const lenBytes = encodeBigEndianLength(totalLen)
+  const result = new Uint8Array(1 + lenBytes.length + totalLen)
+  result[0] = 0xf7 + lenBytes.length
+  result.set(lenBytes, 1)
+  result.set(payload, 1 + lenBytes.length)
+  return result
+}
+
+/**
+ * RLP encode a byte array.
+ */
+function rlpEncodeBytes(data: Uint8Array): Uint8Array {
+  if (data.length === 1 && data[0] <= 0x7f) {
+    return data
+  }
+  if (data.length <= 55) {
+    const result = new Uint8Array(1 + data.length)
+    result[0] = 0x80 + data.length
+    result.set(data, 1)
+    return result
+  }
+
+  const lenBytes = encodeBigEndianLength(data.length)
+  const result = new Uint8Array(1 + lenBytes.length + data.length)
+  result[0] = 0xb7 + lenBytes.length
+  result.set(lenBytes, 1)
+  result.set(data, 1 + lenBytes.length)
+  return result
+}
+
+/**
+ * Encode a length as big-endian bytes (minimal encoding).
+ */
+function encodeBigEndianLength(length: number): Uint8Array {
+  if (length <= 0xff) return new Uint8Array([length])
+  if (length <= 0xffff) return new Uint8Array([(length >> 8) & 0xff, length & 0xff])
+  if (length <= 0xffffff) return new Uint8Array([(length >> 16) & 0xff, (length >> 8) & 0xff, length & 0xff])
+  return new Uint8Array([(length >> 24) & 0xff, (length >> 16) & 0xff, (length >> 8) & 0xff, length & 0xff])
+}
+
+/**
+ * Convert a number to an 8-byte big-endian Uint8Array.
+ */
+function numberToUint64BE(value: number): Uint8Array {
+  const buf = new Uint8Array(8)
+  let v = value
+  for (let i = 7; i >= 0; i--) {
+    buf[i] = v & 0xff
+    v = Math.floor(v / 256)
+  }
+  // Strip leading zeros for RLP (minimal encoding)
+  let start = 0
+  while (start < 7 && buf[start] === 0) start++
+  return buf.slice(start)
+}
+
+/**
+ * Right-pad a byte array to 32 bytes (for Flow domain separation tags).
+ */
+function rightPadTo32(data: Uint8Array): Uint8Array {
+  const padded = new Uint8Array(32)
+  padded.set(data.slice(0, 32), 0)
+  return padded
+}
+
+/**
+ * Concatenate multiple Uint8Arrays.
+ */
+function concatBytes(...arrays: Uint8Array[]): Uint8Array {
+  const totalLen = arrays.reduce((sum, a) => sum + a.length, 0)
+  const result = new Uint8Array(totalLen)
+  let offset = 0
+  for (const arr of arrays) {
+    result.set(arr, offset)
+    offset += arr.length
+  }
+  return result
+}
+
+/**
+ * Convert bytes to base64 string.
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
 /**
  * Encode r and s values into DER format for signature verification.
  */
@@ -263,9 +392,23 @@ export class FlowSigner implements ChainSigner {
   /**
    * Sign a Flow transaction.
    *
-   * The transaction envelope to sign should be provided in tx.data as a hex string.
-   * This is the RLP-encoded transaction payload that Flow requires.
-   * Returns the ECDSA P-256 signature as a hex string (r || s, each 32 bytes).
+   * Two modes of operation:
+   *
+   * 1. Raw mode: tx.data contains a pre-encoded hex payload to sign directly.
+   * 2. Transfer mode: tx.to, tx.value, and tx.extra contain transfer parameters.
+   *    In this mode, a Cadence transfer script is built, RLP-encoded, and signed.
+   *    Required tx.extra fields for transfer mode:
+   *      - senderAddress: string (the Flow account address, e.g., "0x1234abcd1234abcd")
+   *      - keyIndex: number (default: 0)
+   *      - sequenceNumber: number (account key sequence number)
+   *      - gasLimit: number (default: 9999)
+   *      - referenceBlockId: string (recent block ID hex)
+   *      - fungibleTokenAddress: string (FungibleToken contract address for the network)
+   *      - flowTokenAddress: string (FlowToken contract address for the network)
+   *
+   * Returns the ECDSA P-256 signature as a hex string (r || s, each 32 bytes)
+   * in raw mode, or a JSON string containing the full transaction body ready
+   * for broadcast via POST /v1/transactions in transfer mode.
    */
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
@@ -278,26 +421,153 @@ export class FlowSigner implements ChainSigner {
       )
     }
 
-    if (!tx.data) {
+    // Raw mode: tx.data is already an encoded payload
+    if (tx.data && !tx.to) {
+      const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+      const msgHash = sha256(messageBytes)
+      const signature = p256.sign(msgHash, pkBytes)
+
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      return addHexPrefix(rHex + sHex)
+    }
+
+    // Transfer mode: build a full Flow transaction
+    if (!tx.to || !tx.value) {
       throw new ChainKitError(
         ErrorCode.INVALID_PARAMS,
-        'Transaction data (encoded transaction payload) is required for Flow signing',
+        'Transaction must have either data (raw payload) or to + value (FLOW transfer)',
       )
     }
 
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+    const senderAddress = stripHexPrefix(tx.extra?.senderAddress as string ?? tx.from as string)
+    const keyIndex = (tx.extra?.keyIndex as number) ?? 0
+    const sequenceNumber = (tx.extra?.sequenceNumber as number) ?? 0
+    const gasLimit = (tx.extra?.gasLimit as number) ?? 9999
+    const referenceBlockId = tx.extra?.referenceBlockId as string
+    const fungibleTokenAddr = tx.extra?.fungibleTokenAddress as string ?? '0xf233dcee88fe0abe'
+    const flowTokenAddr = tx.extra?.flowTokenAddress as string ?? '0x1654653399040a61'
 
-    // Flow signs the SHA-256 hash of the transaction payload
-    const msgHash = sha256(messageBytes)
+    if (!referenceBlockId) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_PARAMS,
+        'referenceBlockId is required in tx.extra for Flow transfer mode',
+      )
+    }
 
-    // Sign with P-256
-    const signature = p256.sign(msgHash, pkBytes)
+    const recipientAddress = tx.to
+    // Value is in 10^-8 FLOW units, convert to UFix64 string (8 decimal places)
+    const amountValue = BigInt(tx.value as string)
+    const wholePart = amountValue / 100_000_000n
+    const fracPart = amountValue % 100_000_000n
+    const amountUFix64 = `${wholePart}.${fracPart.toString().padStart(8, '0')}`
 
-    // Encode as r (32 bytes) + s (32 bytes) - no recovery byte
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
+    // Build the Cadence script for FLOW transfer
+    const script = [
+      `import FungibleToken from ${fungibleTokenAddr}`,
+      `import FlowToken from ${flowTokenAddr}`,
+      '',
+      'transaction(amount: UFix64, to: Address) {',
+      '    prepare(signer: auth(BorrowValue) &Account) {',
+      '        let vaultRef = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)!',
+      '        let sentVault <- vaultRef.withdraw(amount: amount)',
+      '        let receiverRef = getAccount(to).capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)!.borrow()!',
+      '        receiverRef.deposit(from: <-sentVault)',
+      '    }',
+      '}',
+    ].join('\n')
 
-    return addHexPrefix(rHex + sHex)
+    // Build JSON-Cadence arguments
+    const args = [
+      { type: 'UFix64', value: amountUFix64 },
+      { type: 'Address', value: recipientAddress.startsWith('0x') ? recipientAddress : '0x' + recipientAddress },
+    ]
+
+    // Build the transaction payload for RLP encoding
+    // Flow transaction payload structure:
+    // [script, arguments, referenceBlockId, gasLimit, proposalKey, payer, authorizers]
+    // proposalKey = [address, keyIndex, sequenceNumber]
+
+    const scriptBase64 = bytesToBase64(new TextEncoder().encode(script))
+    const argsBase64 = args.map(a => bytesToBase64(new TextEncoder().encode(JSON.stringify(a))))
+
+    // RLP encode the payload for signing
+    const payloadItems: RlpItem = [
+      new TextEncoder().encode(script),                                  // script
+      args.map(a => new TextEncoder().encode(JSON.stringify(a))),       // arguments
+      hexToBytes(stripHexPrefix(referenceBlockId)),                      // reference block ID
+      numberToUint64BE(gasLimit),                                        // gas limit
+      [                                                                  // proposal key
+        hexToBytes(senderAddress.padStart(16, '0')),                    // address (8 bytes)
+        numberToUint64BE(keyIndex),                                      // key index
+        numberToUint64BE(sequenceNumber),                                // sequence number
+      ],
+      hexToBytes(senderAddress.padStart(16, '0')),                      // payer
+      [hexToBytes(senderAddress.padStart(16, '0'))],                    // authorizers
+    ]
+
+    const payloadEncoded = rlpEncode(payloadItems)
+
+    // Domain separation tag for transaction payload
+    const domainTag = rightPadTo32(new TextEncoder().encode('FLOW-V0.0-transaction'))
+    const payloadMessage = concatBytes(domainTag, payloadEncoded)
+
+    // Sign the payload (payload signature for single-signer = envelope signer)
+    const payloadHash = sha256(payloadMessage)
+    const payloadSig = p256.sign(payloadHash, pkBytes)
+    const payloadSigHex = payloadSig.r.toString(16).padStart(64, '0') + payloadSig.s.toString(16).padStart(64, '0')
+
+    // Build the envelope (payload + payload signatures)
+    const envelopeItems: RlpItem = [
+      payloadItems,                                                      // payload
+      [                                                                  // payload signatures
+        [
+          hexToBytes(senderAddress.padStart(16, '0')),                  // signer address
+          numberToUint64BE(keyIndex),                                    // key index
+          hexToBytes(payloadSigHex),                                    // signature
+        ],
+      ],
+    ]
+
+    const envelopeEncoded = rlpEncode(envelopeItems)
+
+    // Sign the envelope
+    const envelopeMessage = concatBytes(domainTag, envelopeEncoded)
+    const envelopeHash = sha256(envelopeMessage)
+    const envelopeSig = p256.sign(envelopeHash, pkBytes)
+    const envelopeSigHex = envelopeSig.r.toString(16).padStart(64, '0') + envelopeSig.s.toString(16).padStart(64, '0')
+
+    // Build the REST API transaction body
+    const txBody = {
+      script: scriptBase64,
+      arguments: argsBase64,
+      reference_block_id: stripHexPrefix(referenceBlockId),
+      gas_limit: gasLimit.toString(),
+      proposal_key: {
+        address: senderAddress.padStart(16, '0'),
+        key_index: keyIndex.toString(),
+        sequence_number: sequenceNumber.toString(),
+      },
+      payer: senderAddress.padStart(16, '0'),
+      authorizers: [senderAddress.padStart(16, '0')],
+      payload_signatures: [
+        {
+          address: senderAddress.padStart(16, '0'),
+          key_index: keyIndex.toString(),
+          signature: bytesToBase64(hexToBytes(payloadSigHex)),
+        },
+      ],
+      envelope_signatures: [
+        {
+          address: senderAddress.padStart(16, '0'),
+          key_index: keyIndex.toString(),
+          signature: bytesToBase64(hexToBytes(envelopeSigHex)),
+        },
+      ],
+    }
+
+    // Return as JSON string (broadcastTransaction expects this)
+    return JSON.stringify(txBody)
   }
 
   /**

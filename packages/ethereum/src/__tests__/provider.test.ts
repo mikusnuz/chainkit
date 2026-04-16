@@ -209,13 +209,13 @@ describe('EthereumProvider', () => {
 
       const fee = await provider.estimateFee()
 
-      expect(fee.unit).toBe('gwei')
-      // Slow: 1 gwei + 2 gwei = 3 gwei
-      expect(parseFloat(fee.slow)).toBeCloseTo(3.0, 1)
-      // Average: 1 * 1.25 + 2 * 1.5 = 1.25 + 3 = 4.25
-      expect(parseFloat(fee.average)).toBeCloseTo(4.25, 1)
-      // Fast: 1 * 1.5 + 2 * 2 = 1.5 + 4 = 5.5
-      expect(parseFloat(fee.fast)).toBeCloseTo(5.5, 1)
+      expect(fee.unit).toBe('wei')
+      // Slow: 1 gwei + 2 gwei = 3 gwei = 3000000000 wei
+      expect(BigInt(fee.slow)).toBe(3000000000n)
+      // Average: 1 * 1.25 + 2 * 1.5 = 1.25 + 3 = 4.25 gwei = 4250000000 wei
+      expect(BigInt(fee.average)).toBe(4250000000n)
+      // Fast: 1 * 1.5 + 2 * 2 = 1.5 + 4 = 5.5 gwei = 5500000000 wei
+      expect(BigInt(fee.fast)).toBe(5500000000n)
     })
   })
 

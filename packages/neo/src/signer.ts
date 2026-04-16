@@ -569,7 +569,8 @@ export class NeoSigner implements ChainSigner {
 
     // Extract Neo-specific fields from the transaction
     const version = 0
-    const nonce = tx.nonce ?? 0
+    // Neo uses random nonces (not sequential like Ethereum)
+    const nonce = tx.nonce ?? (Math.random() * 0xffffffff) >>> 0
     const systemFee = BigInt(tx.fee?.systemFee as string ?? '0')
     const networkFee = BigInt(tx.fee?.networkFee as string ?? '0')
     const validUntilBlock = Number(tx.extra?.validUntilBlock ?? 0)

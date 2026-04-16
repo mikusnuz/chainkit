@@ -232,17 +232,11 @@ export class EthereumProvider
     const average = (baseFee * 125n) / 100n + (priorityFee * 150n) / 100n
     const fast = (baseFee * 150n) / 100n + priorityFee * 2n
 
-    // Convert from wei to gwei for display
-    const toGwei = (wei: bigint) => {
-      const gwei = Number(wei) / 1e9
-      return gwei.toFixed(2)
-    }
-
     return {
-      slow: toGwei(slow),
-      average: toGwei(average),
-      fast: toGwei(fast),
-      unit: 'gwei',
+      slow: slow.toString(),
+      average: average.toString(),
+      fast: fast.toString(),
+      unit: 'wei',
     }
   }
 

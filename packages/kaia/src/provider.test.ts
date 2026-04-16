@@ -147,7 +147,7 @@ describe('KaiaProvider', () => {
   describe('estimateFee', () => {
     it('should estimate fees with baseFee (post-Magma)', async () => {
       const mockBlock = {
-        baseFeePerGas: '0x5d21dba00', // 25 Gpeb
+        baseFeePerGas: '0x5d21dba00', // 25 Gpeb = 25000000000 peb
       }
 
       mockRequest
@@ -156,10 +156,10 @@ describe('KaiaProvider', () => {
 
       const fee = await provider.estimateFee()
 
-      expect(fee.unit).toBe('Gpeb')
-      expect(parseFloat(fee.slow)).toBeGreaterThan(0)
-      expect(parseFloat(fee.average)).toBeGreaterThanOrEqual(parseFloat(fee.slow))
-      expect(parseFloat(fee.fast)).toBeGreaterThanOrEqual(parseFloat(fee.average))
+      expect(fee.unit).toBe('peb')
+      expect(BigInt(fee.slow)).toBeGreaterThan(0n)
+      expect(BigInt(fee.average)).toBeGreaterThanOrEqual(BigInt(fee.slow))
+      expect(BigInt(fee.fast)).toBeGreaterThanOrEqual(BigInt(fee.average))
     })
 
     it('should fall back to gasPrice when no baseFee', async () => {
@@ -167,12 +167,12 @@ describe('KaiaProvider', () => {
 
       mockRequest
         .mockResolvedValueOnce(mockBlock)
-        .mockResolvedValueOnce('0x5d21dba00') // 25 Gpeb
+        .mockResolvedValueOnce('0x5d21dba00') // 25 Gpeb = 25000000000 peb
 
       const fee = await provider.estimateFee()
 
-      expect(fee.unit).toBe('Gpeb')
-      expect(parseFloat(fee.slow)).toBeGreaterThan(0)
+      expect(fee.unit).toBe('peb')
+      expect(BigInt(fee.slow)).toBeGreaterThan(0n)
     })
   })
 

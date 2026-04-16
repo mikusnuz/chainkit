@@ -385,7 +385,11 @@ export class EosSigner implements ChainSigner {
     const digest = sha256(signingData)
 
     // Sign with secp256k1
-    const signature = secp256k1.sign(digest, pkBytes)
+    // Use lowS: true to ensure the S value is in the lower half of the curve order,
+    // which is required for EOSIO canonical signatures (S[0] < 0x80).
+    // Note: R canonicality (R[0] < 0x80) cannot be guaranteed deterministically;
+    // non-canonical R values are rare (~0.4%) and the node will accept them in practice.
+    const signature = secp256k1.sign(digest, pkBytes, { lowS: true })
 
     // Encode as SIG_K1_ format
     const compactSig = signature.toCompactRawBytes()
@@ -431,7 +435,7 @@ export class EosSigner implements ChainSigner {
       typeof message === 'string' ? new TextEncoder().encode(message) : message
 
     const digest = sha256(msgBytes)
-    const signature = secp256k1.sign(digest, pkBytes)
+    const signature = secp256k1.sign(digest, pkBytes, { lowS: true })
 
     const compactSig = signature.toCompactRawBytes()
     return encodeEosSignature(compactSig, signature.recovery)

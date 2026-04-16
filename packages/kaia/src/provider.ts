@@ -243,17 +243,11 @@ export class KaiaProvider
       fast = (currentGasPrice * 150n) / 100n
     }
 
-    // Convert from peb to Gpeb (Gwei equivalent) for display
-    const toGpeb = (peb: bigint) => {
-      const gpeb = Number(peb) / 1e9
-      return gpeb.toFixed(2)
-    }
-
     return {
-      slow: toGpeb(slow),
-      average: toGpeb(average),
-      fast: toGpeb(fast),
-      unit: 'Gpeb',
+      slow: slow.toString(),
+      average: average.toString(),
+      fast: fast.toString(),
+      unit: 'peb',
     }
   }
 
