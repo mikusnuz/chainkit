@@ -1,4 +1,4 @@
-import type { ChainSigner, ChainProvider, RpcManagerConfig } from '@chainkit/core'
+import type { ChainSigner, ChainProvider, RpcManagerConfig, UnsignedTx, TransactionInfo, WaitForTransactionOptions } from '@chainkit/core'
 
 /**
  * A chain definition that provides a Signer class and a Provider class.
@@ -46,14 +46,33 @@ export interface ReadOnlyChainInstance {
   getBlock: ChainProvider['getBlock']
   estimateFee: ChainProvider['estimateFee']
   getChainInfo: ChainProvider['getChainInfo']
+  waitForTransaction(hash: string, options?: WaitForTransactionOptions): Promise<TransactionInfo>
   readonly provider: ChainProvider
+}
+
+/**
+ * Parameters for send() and prepareTransaction().
+ */
+export interface SendParams {
+  /** Recipient address */
+  to: string
+  /** Amount to send as a string */
+  amount: string
+  /** Optional memo/message */
+  memo?: string
+  /** Optional data payload */
+  data?: unknown
+  /** Chain-specific options (overrides for fee, nonce, etc.) */
+  options?: Record<string, unknown>
 }
 
 /**
  * A full chain instance that can query, sign, and send transactions.
  */
 export interface FullChainInstance extends ReadOnlyChainInstance {
-  send(params: { to: string; amount: string; data?: unknown }): Promise<string>
+  send(params: SendParams): Promise<string>
+  prepareTransaction(params: SendParams): Promise<UnsignedTx>
+  waitForTransaction(hash: string, options?: WaitForTransactionOptions): Promise<TransactionInfo>
   signTransaction: ChainSigner['signTransaction']
   signMessage: ChainSigner['signMessage']
   getAddress(): string

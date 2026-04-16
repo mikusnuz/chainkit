@@ -30,6 +30,7 @@ export type {
   EvmSignerCapable,
   TypedDataDomain,
   TypedDataField,
+  WaitForTransactionOptions,
 } from './types/index.js'
 
 // Error classes & enums
@@ -48,3 +49,27 @@ export {
   derivePath,
   derivePublicKey,
 } from './crypto/index.js'
+
+// Transaction Utilities
+export { waitForTransaction } from './utils/index.js'
+
+// ABI Encoder/Decoder
+export {
+  encodeFunctionCall,
+  encodeFunctionSelector,
+  encodeAddress,
+  encodeUint256,
+  encodeInt256,
+  encodeBytes32,
+  encodeString,
+  encodeBool,
+  encodeBytes,
+  decodeFunctionResult,
+  decodeAddress,
+  decodeUint256,
+  decodeInt256,
+  decodeString,
+  decodeBool,
+  decodeBytes32,
+  ERC20,
+} from './abi/index.js'

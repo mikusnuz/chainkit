@@ -1,6 +1,7 @@
 import {
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -12,6 +13,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -73,6 +75,7 @@ async function algodRequest<T>(
  * Uses the Algod REST API.
  */
 export class AlgorandProvider
+
   implements ChainProvider, ContractCapable, TokenCapable, SubscriptionCapable
 {
   private readonly config: AlgorandProviderConfig
@@ -588,6 +591,23 @@ export class AlgorandProvider
       active = false
     }
   }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
 }
 
 /**
@@ -600,4 +620,5 @@ function hexToUint8Array(hex: string): Uint8Array {
     bytes[i] = parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16)
   }
   return bytes
+
 }

@@ -30,6 +30,8 @@ export type {
   ProviderConfig,
 } from './provider.js'
 
+export type { WaitForTransactionOptions } from '../utils/wait-for-tx.js'
+
 export type {
   ContractCapable,
   TokenCapable,

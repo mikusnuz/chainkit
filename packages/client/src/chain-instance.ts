@@ -1,8 +1,10 @@
-import type { ChainProvider, ChainSigner } from '@chainkit/core'
+import type { ChainProvider, ChainSigner, UnsignedTx, TransactionInfo, WaitForTransactionOptions } from '@chainkit/core'
+import { waitForTransaction as waitForTransactionHelper } from '@chainkit/core'
 import type {
   ChainConfig,
   ReadOnlyChainInstance,
   FullChainInstance,
+  SendParams,
 } from './types.js'
 
 /**
@@ -15,6 +17,13 @@ function createReadOnlyInstance(provider: ChainProvider): ReadOnlyChainInstance 
     getBlock: (hashOrNumber) => provider.getBlock(hashOrNumber),
     estimateFee: () => provider.estimateFee(),
     getChainInfo: () => provider.getChainInfo(),
+    waitForTransaction: (hash: string, options?: WaitForTransactionOptions): Promise<TransactionInfo> => {
+      return waitForTransactionHelper(
+        (h) => provider.getTransaction(h) as Promise<TransactionInfo>,
+        hash,
+        options,
+      )
+    },
     get provider() {
       return provider
     },
@@ -31,6 +40,34 @@ function createFullInstance(
 ): FullChainInstance {
   const readOnly = createReadOnlyInstance(provider)
 
+  /**
+   * Build an UnsignedTx by auto-fetching nonce and fee from the provider.
+   */
+  async function buildUnsignedTx(params: SendParams): Promise<UnsignedTx> {
+    const from = signer.getAddress(privateKey)
+
+    // Auto-fetch nonce and fee in parallel
+    const [nonce, feeEstimate] = await Promise.all([
+      provider.getNonce(from),
+      provider.estimateFee(),
+    ])
+
+    // Build tx with auto-fetched params + user overrides
+    const tx: UnsignedTx = {
+      from,
+      to: params.to,
+      amount: params.amount,
+      value: params.amount,
+      data: params.data as string | undefined,
+      memo: params.memo,
+      nonce: typeof nonce === 'number' ? nonce : parseInt(String(nonce), 10),
+      fee: { fee: feeEstimate.average },
+      extra: params.options,
+    }
+
+    return tx
+  }
+
   return {
     ...readOnly,
     get provider() {
@@ -40,20 +77,17 @@ function createFullInstance(
       return signer
     },
 
-    async send(params: { to: string; amount: string; data?: unknown }): Promise<string> {
-      const address = signer.getAddress(privateKey)
-      const fee = await provider.estimateFee()
-      const signedTx = await signer.signTransaction({
-        privateKey,
-        tx: {
-          from: address,
-          to: params.to,
-          value: params.amount,
-          data: params.data as string | undefined,
-          fee: { average: fee.average },
-        },
-      })
-      return provider.broadcastTransaction(signedTx)
+    async prepareTransaction(params: SendParams): Promise<UnsignedTx> {
+      return buildUnsignedTx(params)
+    },
+
+    async send(params: SendParams): Promise<string> {
+      // Build unsigned tx with auto-fetched nonce and fee
+      const tx = await buildUnsignedTx(params)
+
+      // Sign and broadcast
+      const signed = await signer.signTransaction({ privateKey, tx })
+      return provider.broadcastTransaction(signed)
     },
 
     signTransaction: (txParams) => signer.signTransaction(txParams),

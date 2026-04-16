@@ -1,6 +1,7 @@
 import {
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -12,6 +13,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -42,6 +44,7 @@ export interface FlowProviderConfig {
  *   - POST /v1/scripts - Execute Cadence scripts
  */
 export class FlowProvider
+
   implements ChainProvider, ContractCapable, TokenCapable, SubscriptionCapable
 {
   private readonly accessApiUrl: string
@@ -741,6 +744,23 @@ export class FlowProvider
       active = false
     }
   }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
 }
 
 // ---- Utility functions ----
@@ -770,4 +790,5 @@ function decimalToSmallestUnit(decimal: string): string {
 
   const amount = BigInt(whole) * BigInt(100_000_000) + BigInt(frac)
   return amount.toString()
+
 }

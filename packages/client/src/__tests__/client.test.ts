@@ -31,6 +31,7 @@ function createMockProvider() {
       timestamp: 1700000000,
       transactions: ['0xtx1'],
     }),
+    getNonce: vi.fn().mockResolvedValue(5),
     estimateFee: vi.fn().mockResolvedValue({
       slow: '10.00',
       average: '15.00',
@@ -57,6 +58,7 @@ function createMockSigner() {
     getAddress: vi.fn().mockReturnValue('0xmockaddress'),
     signTransaction: vi.fn().mockResolvedValue('0xsignedtx'),
     signMessage: vi.fn().mockResolvedValue('0xsig'),
+    validateAddress: vi.fn().mockReturnValue(true),
   }
 }
 
@@ -114,7 +116,7 @@ describe('createClient', () => {
     expect(mockProvider.getBalance).toHaveBeenCalledWith('0xaddress')
   })
 
-  it('should allow full chain to send transactions', async () => {
+  it('should allow full chain to send transactions with auto-fetch', async () => {
     const client = await createClient({
       chains: {
         ethereum: {
@@ -132,15 +134,20 @@ describe('createClient', () => {
     })
 
     expect(txHash).toBe('0xtxhash')
+    // Should have fetched nonce
+    expect(mockProvider.getNonce).toHaveBeenCalledWith('0xmockaddress')
     // Should have estimated fee
     expect(mockProvider.estimateFee).toHaveBeenCalled()
-    // Should have signed the transaction
+    // Should have signed the transaction with auto-fetched params
     expect(mockSigner.signTransaction).toHaveBeenCalledWith({
       privateKey: '0xprivkey',
       tx: expect.objectContaining({
         from: '0xmockaddress',
         to: '0xrecipient',
+        amount: '1000000000000000000',
         value: '1000000000000000000',
+        nonce: 5,
+        fee: { fee: '15.00' },
       }),
     })
     // Should have broadcast the signed transaction
@@ -367,7 +374,7 @@ describe('createChainInstance', () => {
     expect(mockProvider.getChainInfo).toHaveBeenCalled()
   })
 
-  it('should sign and broadcast in send flow', async () => {
+  it('should auto-fetch nonce and fee in send flow', async () => {
     const instance = await createChainInstance({
       chain: mockChain,
       rpcs: ['http://localhost:8545'],
@@ -383,23 +390,78 @@ describe('createChainInstance', () => {
     // 1. Get address from signer
     expect(mockSigner.getAddress).toHaveBeenCalledWith('0xprivkey')
 
-    // 2. Estimate fee
+    // 2. Fetch nonce
+    expect(mockProvider.getNonce).toHaveBeenCalledWith('0xmockaddress')
+
+    // 3. Estimate fee
     expect(mockProvider.estimateFee).toHaveBeenCalled()
 
-    // 3. Sign transaction
+    // 4. Sign transaction with auto-fetched params
     expect(mockSigner.signTransaction).toHaveBeenCalledWith({
       privateKey: '0xprivkey',
-      tx: {
+      tx: expect.objectContaining({
         from: '0xmockaddress',
         to: '0xrecipient',
+        amount: '1000',
         value: '1000',
         data: '0xdeadbeef',
-        fee: { average: '15.00' },
-      },
+        nonce: 5,
+        fee: { fee: '15.00' },
+      }),
     })
 
-    // 4. Broadcast
+    // 5. Broadcast
     expect(mockProvider.broadcastTransaction).toHaveBeenCalledWith('0xsignedtx')
     expect(txHash).toBe('0xtxhash')
+  })
+
+  it('should prepare transaction without signing', async () => {
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      privateKey: '0xprivkey',
+    }) as FullChainInstance
+
+    const tx = await instance.prepareTransaction({
+      to: '0xrecipient',
+      amount: '500',
+      memo: 'test memo',
+    })
+
+    expect(tx.from).toBe('0xmockaddress')
+    expect(tx.to).toBe('0xrecipient')
+    expect(tx.amount).toBe('500')
+    expect(tx.value).toBe('500')
+    expect(tx.memo).toBe('test memo')
+    expect(tx.nonce).toBe(5)
+    expect(tx.fee).toEqual({ fee: '15.00' })
+
+    // Should NOT have signed or broadcast
+    expect(mockSigner.signTransaction).not.toHaveBeenCalled()
+    expect(mockProvider.broadcastTransaction).not.toHaveBeenCalled()
+  })
+
+  it('should expose waitForTransaction on read-only instance', async () => {
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+    })
+
+    expect(instance.waitForTransaction).toBeDefined()
+    const result = await instance.waitForTransaction('0xtxhash', { intervalMs: 10 })
+    expect(result.status).toBe('confirmed')
+    expect(mockProvider.getTransaction).toHaveBeenCalledWith('0xtxhash')
+  })
+
+  it('should expose waitForTransaction on full instance', async () => {
+    const instance = await createChainInstance({
+      chain: mockChain,
+      rpcs: ['http://localhost:8545'],
+      privateKey: '0xprivkey',
+    }) as FullChainInstance
+
+    expect(instance.waitForTransaction).toBeDefined()
+    const result = await instance.waitForTransaction('0xtxhash', { intervalMs: 10 })
+    expect(result.status).toBe('confirmed')
   })
 })

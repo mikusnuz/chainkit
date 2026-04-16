@@ -1,6 +1,7 @@
 import {
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -11,6 +12,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -569,5 +571,22 @@ export class IotaProvider implements ChainProvider, TokenCapable, SubscriptionCa
     return () => {
       active = false
     }
+  }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
   }
 }

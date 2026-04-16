@@ -1,6 +1,7 @@
 import {
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -12,6 +13,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -38,6 +40,7 @@ export interface StacksProviderConfig {
  * Uses the Stacks Blockchain REST API (Hiro API) instead of JSON-RPC.
  */
 export class StacksProvider
+
   implements ChainProvider, ContractCapable, TokenCapable, SubscriptionCapable
 {
   private readonly baseUrl: string
@@ -665,6 +668,23 @@ export class StacksProvider
       active = false
     }
   }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
 }
 
 /**
@@ -691,4 +711,5 @@ function hexToBuffer(hex: string): Uint8Array {
     bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16)
   }
   return bytes
+
 }

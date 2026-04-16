@@ -1,4 +1,5 @@
 import type { Address, TxHash, Balance, TransactionInfo, BlockInfo, ChainInfo, HexString } from './common.js'
+import type { WaitForTransactionOptions } from '../utils/wait-for-tx.js'
 
 /**
  * Fee estimation result.
@@ -121,4 +122,17 @@ export interface ChainProvider {
    * @returns Chain metadata
    */
   getChainInfo(): Promise<ChainInfo>
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed',
+   * or until the timeout is reached.
+   *
+   * @param hash - The transaction hash to watch
+   * @param options - Polling configuration (timeout, interval, confirmations)
+   * @returns The confirmed TransactionInfo
+   * @throws ChainKitError with TIMEOUT code if the timeout is exceeded
+   * @throws ChainKitError with TRANSACTION_FAILED code if the transaction fails
+   */
+  waitForTransaction?(hash: string, options?: WaitForTransactionOptions): Promise<TransactionInfo>
 }

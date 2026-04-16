@@ -2,6 +2,7 @@ import {
   RpcManager,
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -13,6 +14,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -83,6 +85,7 @@ const ETH_TOKEN_ADDRESS = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b156
  * Uses StarkNet JSON-RPC via an internal RpcManager.
  */
 export class StarknetProvider
+
   implements ChainProvider, ContractCapable, TokenCapable, SubscriptionCapable
 {
   private readonly rpc: RpcManager
@@ -737,6 +740,23 @@ export class StarknetProvider
       active = false
     }
   }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
 }
 
 /**
@@ -770,4 +790,5 @@ function decodeFeltString(felt: string): string {
   }
 
   return new TextDecoder().decode(new Uint8Array(bytes))
+
 }

@@ -1,6 +1,7 @@
 import {
   ChainKitError,
   ErrorCode,
+  waitForTransaction as waitForTransactionHelper,
 } from '@chainkit/core'
 import type {
   ChainProvider,
@@ -12,6 +13,7 @@ import type {
   TxHash,
   Balance,
   TransactionInfo,
+  WaitForTransactionOptions,
   BlockInfo,
   ChainInfo,
   HexString,
@@ -38,6 +40,7 @@ export interface TonProviderConfig {
  * Uses TON HTTP API v2 (REST endpoints) instead of JSON-RPC.
  */
 export class TonProvider
+
   implements ChainProvider, ContractCapable, TokenCapable, SubscriptionCapable
 {
   private readonly endpoint: string
@@ -653,6 +656,23 @@ export class TonProvider
       nonce: tx.transaction_id?.lt ? Number(BigInt(tx.transaction_id.lt) % BigInt(Number.MAX_SAFE_INTEGER)) : undefined,
     }
   }
+
+  // ------- waitForTransaction -------
+
+  /**
+   * Wait for a transaction to be confirmed on-chain.
+   * Polls getTransaction until the status is 'confirmed' or 'failed'.
+   */
+  async waitForTransaction(
+    hash: string,
+    options?: WaitForTransactionOptions,
+  ): Promise<TransactionInfo> {
+    return waitForTransactionHelper(
+      (h) => this.getTransaction(h) as Promise<TransactionInfo>,
+      hash,
+      options,
+    )
+  }
 }
 
 // ------- TON API Response Types -------
@@ -720,4 +740,5 @@ interface TonRunGetMethodResult {
   gas_used?: number
   exit_code: number
   stack?: Array<[string, string]>
+
 }
