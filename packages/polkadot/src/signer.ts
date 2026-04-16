@@ -553,115 +553,119 @@ export class PolkadotSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    const extra = tx.extra as PolkadotTxExtra | undefined
-
-    if (!extra) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction extra fields (specVersion, transactionVersion, genesisHash, blockHash) are required for Polkadot signing. Pass them via tx.extra.',
-      )
-    }
-
-    if (extra.specVersion === undefined || extra.transactionVersion === undefined) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'specVersion and transactionVersion are required in tx.extra',
-      )
-    }
-
-    if (!extra.genesisHash || !extra.blockHash) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'genesisHash and blockHash are required in tx.extra',
-      )
-    }
-
-    // Build call data
-    let callData: Uint8Array
-
-    if (tx.data) {
-      // Use pre-encoded call data
-      callData = hexToBytes(stripHexPrefix(tx.data as string))
-    } else {
-      // Build Balances.transferKeepAlive call data
-      if (!tx.to) {
+      if (pkBytes.length !== 32) {
         throw new ChainKitError(
-          ErrorCode.INVALID_PARAMS,
-          'Recipient address (tx.to) is required for balance transfer',
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
         )
       }
 
-      const { publicKey: destPublicKey } = decodeSS58(tx.to)
-      const amount = BigInt(tx.value || '0')
-      const palletIndex = extra.palletIndex ?? 5
-      const callIndex = extra.callIndex ?? 3
+      const extra = tx.extra as PolkadotTxExtra | undefined
 
-      callData = buildTransferKeepAliveCallData(destPublicKey, amount, palletIndex, callIndex)
-    }
+      if (!extra) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction extra fields (specVersion, transactionVersion, genesisHash, blockHash) are required for Polkadot signing. Pass them via tx.extra.',
+        )
+      }
 
-    // Encode era
-    const era = encodeEra(extra.era)
+      if (extra.specVersion === undefined || extra.transactionVersion === undefined) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'specVersion and transactionVersion are required in tx.extra',
+        )
+      }
 
-    // Nonce
-    const nonce = tx.nonce ?? 0
+      if (!extra.genesisHash || !extra.blockHash) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'genesisHash and blockHash are required in tx.extra',
+        )
+      }
 
-    // Tip
-    const tip = BigInt(extra.tip ?? 0n)
+      // Build call data
+      let callData: Uint8Array
 
-    // Decode hashes
-    const genesisHash = hexToBytes(stripHexPrefix(extra.genesisHash))
-    const blockHash = hexToBytes(stripHexPrefix(extra.blockHash))
+      if (tx.data) {
+        // Use pre-encoded call data
+        callData = hexToBytes(stripHexPrefix(tx.data as string))
+      } else {
+        // Build Balances.transferKeepAlive call data
+        if (!tx.to) {
+          throw new ChainKitError(
+            ErrorCode.INVALID_PARAMS,
+            'Recipient address (tx.to) is required for balance transfer',
+          )
+        }
 
-    if (genesisHash.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        `Invalid genesisHash length: expected 32 bytes, got ${genesisHash.length}`,
+        const { publicKey: destPublicKey } = decodeSS58(tx.to)
+        const amount = BigInt(tx.value || '0')
+        const palletIndex = extra.palletIndex ?? 5
+        const callIndex = extra.callIndex ?? 3
+
+        callData = buildTransferKeepAliveCallData(destPublicKey, amount, palletIndex, callIndex)
+      }
+
+      // Encode era
+      const era = encodeEra(extra.era)
+
+      // Nonce
+      const nonce = tx.nonce ?? 0
+
+      // Tip
+      const tip = BigInt(extra.tip ?? 0n)
+
+      // Decode hashes
+      const genesisHash = hexToBytes(stripHexPrefix(extra.genesisHash))
+      const blockHash = hexToBytes(stripHexPrefix(extra.blockHash))
+
+      if (genesisHash.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          `Invalid genesisHash length: expected 32 bytes, got ${genesisHash.length}`,
+        )
+      }
+      if (blockHash.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          `Invalid blockHash length: expected 32 bytes, got ${blockHash.length}`,
+        )
+      }
+
+      // Build signing payload
+      const signingPayload = buildSigningPayload(
+        callData,
+        era,
+        nonce,
+        tip,
+        extra.specVersion,
+        extra.transactionVersion,
+        genesisHash,
+        blockHash,
       )
-    }
-    if (blockHash.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        `Invalid blockHash length: expected 32 bytes, got ${blockHash.length}`,
+
+      // Sign with ED25519
+      const signature = ed25519.sign(signingPayload, pkBytes)
+
+      // Get signer public key
+      const signerPublicKey = ed25519.getPublicKey(pkBytes)
+
+      // Assemble the signed extrinsic
+      const signedExtrinsic = assembleSignedExtrinsic(
+        signerPublicKey,
+        signature,
+        era,
+        nonce,
+        tip,
+        callData,
       )
+
+      return addHexPrefix(bytesToHex(signedExtrinsic))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Build signing payload
-    const signingPayload = buildSigningPayload(
-      callData,
-      era,
-      nonce,
-      tip,
-      extra.specVersion,
-      extra.transactionVersion,
-      genesisHash,
-      blockHash,
-    )
-
-    // Sign with ED25519
-    const signature = ed25519.sign(signingPayload, pkBytes)
-
-    // Get signer public key
-    const signerPublicKey = ed25519.getPublicKey(pkBytes)
-
-    // Assemble the signed extrinsic
-    const signedExtrinsic = assembleSignedExtrinsic(
-      signerPublicKey,
-      signature,
-      era,
-      nonce,
-      tip,
-      callData,
-    )
-
-    return addHexPrefix(bytesToHex(signedExtrinsic))
   }
 
   /**
@@ -684,20 +688,24 @@ export class PolkadotSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }
 

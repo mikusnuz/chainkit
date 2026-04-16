@@ -434,45 +434,49 @@ export class FilecoinSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const gasLimit = tx.fee?.gasLimit ? parseInt(tx.fee.gasLimit, 10) : 1000000
-    const gasFeeCap = (tx.fee?.gasFeeCap as string) ?? '0'
-    const gasPremium = (tx.fee?.gasPremium as string) ?? '0'
-    const method = (tx.extra?.method as number) ?? 0
-    const nonce = tx.nonce ?? 0
+      const gasLimit = tx.fee?.gasLimit ? parseInt(tx.fee.gasLimit, 10) : 1000000
+      const gasFeeCap = (tx.fee?.gasFeeCap as string) ?? '0'
+      const gasPremium = (tx.fee?.gasPremium as string) ?? '0'
+      const method = (tx.extra?.method as number) ?? 0
+      const nonce = tx.nonce ?? 0
 
-    // CBOR-encode the message
-    const cborMessage = cborEncodeMessage({
-      to: tx.to,
-      from: tx.from as string,
-      value: (tx.value ?? tx.amount ?? "0") as string,
-      method,
-      nonce,
-      gasLimit,
-      gasFeeCap,
-      gasPremium,
-    })
+      // CBOR-encode the message
+      const cborMessage = cborEncodeMessage({
+        to: tx.to,
+        from: tx.from as string,
+        value: (tx.value ?? tx.amount ?? "0") as string,
+        method,
+        nonce,
+        gasLimit,
+        gasFeeCap,
+        gasPremium,
+      })
 
-    // CID prefix for signing: blake2b-256 hash with CID prefix
-    // Filecoin uses CID v1 with dag-cbor (0x71) and blake2b-256 (0xb220, length 32)
-    const CID_PREFIX = new Uint8Array([0x01, 0x71, 0xa0, 0xe4, 0x02, 0x20])
-    const messageHash = blake2b(cborMessage, { dkLen: 32 })
+      // CID prefix for signing: blake2b-256 hash with CID prefix
+      // Filecoin uses CID v1 with dag-cbor (0x71) and blake2b-256 (0xb220, length 32)
+      const CID_PREFIX = new Uint8Array([0x01, 0x71, 0xa0, 0xe4, 0x02, 0x20])
+      const messageHash = blake2b(cborMessage, { dkLen: 32 })
 
-    // The signing payload is the blake2b-256 of (CID_PREFIX + messageHash)
-    const sigInput = new Uint8Array(CID_PREFIX.length + messageHash.length)
-    sigInput.set(CID_PREFIX, 0)
-    sigInput.set(messageHash, CID_PREFIX.length)
-    const sigDigest = blake2b(sigInput, { dkLen: 32 })
+      // The signing payload is the blake2b-256 of (CID_PREFIX + messageHash)
+      const sigInput = new Uint8Array(CID_PREFIX.length + messageHash.length)
+      sigInput.set(CID_PREFIX, 0)
+      sigInput.set(messageHash, CID_PREFIX.length)
+      const sigDigest = blake2b(sigInput, { dkLen: 32 })
 
-    // Sign with secp256k1
-    const signature = secp256k1.sign(sigDigest, pkBytes)
+      // Sign with secp256k1
+      const signature = secp256k1.sign(sigDigest, pkBytes)
 
-    // Filecoin signature format: r (32 bytes) + s (32 bytes) + v (1 byte, recovery id)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery
+      // Filecoin signature format: r (32 bytes) + s (32 bytes) + v (1 byte, recovery id)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery
 
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -490,21 +494,25 @@ export class FilecoinSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with blake2b-256
-    const msgHash = blake2b(msgBytes, { dkLen: 32 })
+      // Hash the message with blake2b-256
+      const msgHash = blake2b(msgBytes, { dkLen: 32 })
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery
+      // r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery
 
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

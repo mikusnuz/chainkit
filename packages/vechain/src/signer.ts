@@ -260,87 +260,91 @@ export class VeChainSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const chainTag = (tx.extra?.chainTag as number) ?? 0x27
-    const blockRef = (tx.extra?.blockRef as string) ?? '0x0000000000000000'
-    const expiration = (tx.extra?.expiration as number) ?? 720
-    const gasPriceCoef = (tx.extra?.gasPriceCoef as number) ?? 0
-    const gas = tx.fee?.gas ? parseInt(tx.fee.gas as string, 10) : 21000
-    const dependsOn = (tx.extra?.dependsOn as string) ?? null
-    // VeChain nonce is random (not sequential like Ethereum) — generate 8 random bytes if not provided
-    const nonce = (tx.extra?.nonce as string) ?? '0x' + bytesToHex(randomBytes(8))
+      const chainTag = (tx.extra?.chainTag as number) ?? 0x27
+      const blockRef = (tx.extra?.blockRef as string) ?? '0x0000000000000000'
+      const expiration = (tx.extra?.expiration as number) ?? 720
+      const gasPriceCoef = (tx.extra?.gasPriceCoef as number) ?? 0
+      const gas = tx.fee?.gas ? parseInt(tx.fee.gas as string, 10) : 21000
+      const dependsOn = (tx.extra?.dependsOn as string) ?? null
+      // VeChain nonce is random (not sequential like Ethereum) — generate 8 random bytes if not provided
+      const nonce = (tx.extra?.nonce as string) ?? '0x' + bytesToHex(randomBytes(8))
 
-    // Build clause: [to, value, data]
-    const toBytes = hexToBytes(stripHexPrefix(tx.to))
-    const rawValue = tx.value ?? tx.amount ?? '0'
-    const valueBytes = rawValue.startsWith('0x')
-      ? hexToMinimalBytes(rawValue)
-      : decimalToMinimalBytes(rawValue)
-    const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
+      // Build clause: [to, value, data]
+      const toBytes = hexToBytes(stripHexPrefix(tx.to))
+      const rawValue = tx.value ?? tx.amount ?? '0'
+      const valueBytes = rawValue.startsWith('0x')
+        ? hexToMinimalBytes(rawValue)
+        : decimalToMinimalBytes(rawValue)
+      const dataBytes = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
-    // Encode clause as an RLP list of its three fields
-    const clauseEncoded = rlpEncode([toBytes, valueBytes, dataBytes])
+      // Encode clause as an RLP list of its three fields
+      const clauseEncoded = rlpEncode([toBytes, valueBytes, dataBytes])
 
-    // Wrap clauses in an outer list (single clause for basic transfers)
-    // The clauses field is a list-of-lists, so we wrap the encoded clause in another list
-    const clausesListPrefix = rlpEncodeLength(clauseEncoded.length, 192)
-    const clausesList = new Uint8Array(clausesListPrefix.length + clauseEncoded.length)
-    clausesList.set(clausesListPrefix, 0)
-    clausesList.set(clauseEncoded, clausesListPrefix.length)
+      // Wrap clauses in an outer list (single clause for basic transfers)
+      // The clauses field is a list-of-lists, so we wrap the encoded clause in another list
+      const clausesListPrefix = rlpEncodeLength(clauseEncoded.length, 192)
+      const clausesList = new Uint8Array(clausesListPrefix.length + clauseEncoded.length)
+      clausesList.set(clausesListPrefix, 0)
+      clausesList.set(clauseEncoded, clausesListPrefix.length)
 
-    // Build the RLP-encoded transaction body (unsigned)
-    // Each scalar field is individually RLP-encoded, then all are wrapped in an outer list
-    const encodedFields: Uint8Array[] = [
-      rlpEncode(numberToMinimalBytes(chainTag)),          // chainTag
-      rlpEncode(hexToFixedBytes(blockRef, 8)),            // blockRef (8 bytes, preserve leading zeros)
-      rlpEncode(numberToMinimalBytes(expiration)),        // expiration
-      clausesList,                                        // clauses (already list-encoded)
-      rlpEncode(numberToMinimalBytes(gasPriceCoef)),      // gasPriceCoef
-      rlpEncode(numberToMinimalBytes(gas)),                // gas
-      dependsOn                                           // dependsOn
-        ? rlpEncode(hexToBytes(stripHexPrefix(dependsOn)))
-        : rlpEncode(new Uint8Array([])),
-      rlpEncode(hexToMinimalBytes(nonce)),                // nonce
-      new Uint8Array([0xc0]),                             // reserved (empty list)
-    ]
+      // Build the RLP-encoded transaction body (unsigned)
+      // Each scalar field is individually RLP-encoded, then all are wrapped in an outer list
+      const encodedFields: Uint8Array[] = [
+        rlpEncode(numberToMinimalBytes(chainTag)),          // chainTag
+        rlpEncode(hexToFixedBytes(blockRef, 8)),            // blockRef (8 bytes, preserve leading zeros)
+        rlpEncode(numberToMinimalBytes(expiration)),        // expiration
+        clausesList,                                        // clauses (already list-encoded)
+        rlpEncode(numberToMinimalBytes(gasPriceCoef)),      // gasPriceCoef
+        rlpEncode(numberToMinimalBytes(gas)),                // gas
+        dependsOn                                           // dependsOn
+          ? rlpEncode(hexToBytes(stripHexPrefix(dependsOn)))
+          : rlpEncode(new Uint8Array([])),
+        rlpEncode(hexToMinimalBytes(nonce)),                // nonce
+        new Uint8Array([0xc0]),                             // reserved (empty list)
+      ]
 
-    // Concatenate all encoded fields and wrap with list prefix
-    const bodyPayloadLength = encodedFields.reduce((sum, buf) => sum + buf.length, 0)
-    const bodyPrefix = rlpEncodeLength(bodyPayloadLength, 192)
-    const body = new Uint8Array(bodyPrefix.length + bodyPayloadLength)
-    body.set(bodyPrefix, 0)
-    let offset = bodyPrefix.length
-    for (const field of encodedFields) {
-      body.set(field, offset)
-      offset += field.length
+      // Concatenate all encoded fields and wrap with list prefix
+      const bodyPayloadLength = encodedFields.reduce((sum, buf) => sum + buf.length, 0)
+      const bodyPrefix = rlpEncodeLength(bodyPayloadLength, 192)
+      const body = new Uint8Array(bodyPrefix.length + bodyPayloadLength)
+      body.set(bodyPrefix, 0)
+      let offset = bodyPrefix.length
+      for (const field of encodedFields) {
+        body.set(field, offset)
+        offset += field.length
+      }
+
+      // Hash with blake2b-256 (VeChain's transaction hash algorithm)
+      const signingHash = blake2b(body, { dkLen: 32 })
+
+      // Sign with secp256k1
+      const signature = secp256k1.sign(signingHash, pkBytes)
+
+      // VeChain signature: r (32 bytes) + s (32 bytes) + recovery (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const recovery = signature.recovery
+      const sigBytes = hexToBytes(rHex + sHex + recovery.toString(16).padStart(2, '0'))
+
+      // Build the signed transaction: re-encode body fields + signature field in one RLP list
+      const encodedSig = rlpEncode(sigBytes)
+      const signedPayloadLength = bodyPayloadLength + encodedSig.length
+      const signedPrefix = rlpEncodeLength(signedPayloadLength, 192)
+      const signedTx = new Uint8Array(signedPrefix.length + signedPayloadLength)
+      signedTx.set(signedPrefix, 0)
+      let signedOffset = signedPrefix.length
+      for (const field of encodedFields) {
+        signedTx.set(field, signedOffset)
+        signedOffset += field.length
+      }
+      signedTx.set(encodedSig, signedOffset)
+
+      return addHexPrefix(bytesToHex(signedTx))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Hash with blake2b-256 (VeChain's transaction hash algorithm)
-    const signingHash = blake2b(body, { dkLen: 32 })
-
-    // Sign with secp256k1
-    const signature = secp256k1.sign(signingHash, pkBytes)
-
-    // VeChain signature: r (32 bytes) + s (32 bytes) + recovery (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const recovery = signature.recovery
-    const sigBytes = hexToBytes(rHex + sHex + recovery.toString(16).padStart(2, '0'))
-
-    // Build the signed transaction: re-encode body fields + signature field in one RLP list
-    const encodedSig = rlpEncode(sigBytes)
-    const signedPayloadLength = bodyPayloadLength + encodedSig.length
-    const signedPrefix = rlpEncodeLength(signedPayloadLength, 192)
-    const signedTx = new Uint8Array(signedPrefix.length + signedPayloadLength)
-    signedTx.set(signedPrefix, 0)
-    let signedOffset = signedPrefix.length
-    for (const field of encodedFields) {
-      signedTx.set(field, signedOffset)
-      signedOffset += field.length
-    }
-    signedTx.set(encodedSig, signedOffset)
-
-    return addHexPrefix(bytesToHex(signedTx))
   }
 
   /**
@@ -365,22 +369,26 @@ export class VeChainSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with keccak256
-    const msgHash = keccak_256(msgBytes)
+      // Hash the message with keccak256
+      const msgHash = keccak_256(msgBytes)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery + 27
+      // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery + 27
 
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

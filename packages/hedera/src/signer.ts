@@ -359,28 +359,32 @@ export class HederaSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      // The transaction body to sign should be in tx.data (hex-encoded serialized body)
+      if (!tx.data) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction data (serialized transaction body) is required for Hedera signing',
+        )
+      }
+
+      const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+
+      // Sign with ED25519
+      const signature = ed25519.sign(messageBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // The transaction body to sign should be in tx.data (hex-encoded serialized body)
-    if (!tx.data) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction data (serialized transaction body) is required for Hedera signing',
-      )
-    }
-
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
-
-    // Sign with ED25519
-    const signature = ed25519.sign(messageBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 
   /**
@@ -406,20 +410,24 @@ export class HederaSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }
 
@@ -518,136 +526,140 @@ export class HederaEcdsaSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
 
-    const chainId = (tx.extra?.chainId as number) ?? 296  // Default to Hedera Testnet
-    const nonce = tx.nonce ?? 0
-    const to = hexToBytes(stripHexPrefix(tx.to))
-    const value = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
-    const data = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
+      const chainId = (tx.extra?.chainId as number) ?? 296  // Default to Hedera Testnet
+      const nonce = tx.nonce ?? 0
+      const to = hexToBytes(stripHexPrefix(tx.to))
+      const value = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
+      const data = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
-    const isEip1559 = tx.fee?.maxFeePerGas !== undefined
+      const isEip1559 = tx.fee?.maxFeePerGas !== undefined
 
-    if (isEip1559) {
-      // EIP-1559 (Type 2) transaction
-      const maxPriorityFeePerGas = tx.fee?.maxPriorityFeePerGas
-        ? hexToMinimalBytes(tx.fee.maxPriorityFeePerGas as string)
-        : new Uint8Array([])
-      const maxFeePerGas = tx.fee?.maxFeePerGas
-        ? hexToMinimalBytes(tx.fee.maxFeePerGas as string)
-        : new Uint8Array([])
-      // Hedera requires higher gas limit for transfers (not 21000 like Ethereum)
-      const gasLimit = tx.fee?.gasLimit
-        ? hexToMinimalBytes(tx.fee.gasLimit as string)
-        : hexToMinimalBytes('0xC350') // 50000 default for Hedera
+      if (isEip1559) {
+        // EIP-1559 (Type 2) transaction
+        const maxPriorityFeePerGas = tx.fee?.maxPriorityFeePerGas
+          ? hexToMinimalBytes(tx.fee.maxPriorityFeePerGas as string)
+          : new Uint8Array([])
+        const maxFeePerGas = tx.fee?.maxFeePerGas
+          ? hexToMinimalBytes(tx.fee.maxFeePerGas as string)
+          : new Uint8Array([])
+        // Hedera requires higher gas limit for transfers (not 21000 like Ethereum)
+        const gasLimit = tx.fee?.gasLimit
+          ? hexToMinimalBytes(tx.fee.gasLimit as string)
+          : hexToMinimalBytes('0xC350') // 50000 default for Hedera
 
-      const fields: Uint8Array[] = [
-        numberToMinimalBytes(chainId),
-        numberToMinimalBytes(nonce),
-        maxPriorityFeePerGas,
-        maxFeePerGas,
-        gasLimit,
-        to,
-        value,
-        data,
-        new Uint8Array([]), // access list placeholder
-      ]
+        const fields: Uint8Array[] = [
+          numberToMinimalBytes(chainId),
+          numberToMinimalBytes(nonce),
+          maxPriorityFeePerGas,
+          maxFeePerGas,
+          gasLimit,
+          to,
+          value,
+          data,
+          new Uint8Array([]), // access list placeholder
+        ]
 
-      const rlpPayload = rlpEncodeEip1559Fields(fields)
-      const signingPayload = new Uint8Array(1 + rlpPayload.length)
-      signingPayload[0] = 0x02
-      signingPayload.set(rlpPayload, 1)
+        const rlpPayload = rlpEncodeEip1559Fields(fields)
+        const signingPayload = new Uint8Array(1 + rlpPayload.length)
+        signingPayload[0] = 0x02
+        signingPayload.set(rlpPayload, 1)
 
-      const msgHash = keccak_256(signingPayload)
-      const signature = secp256k1.sign(msgHash, pkBytes)
+        const msgHash = keccak_256(signingPayload)
+        const signature = secp256k1.sign(msgHash, pkBytes)
 
-      const r = signature.r
-      const s = signature.s
-      const v = signature.recovery
+        const r = signature.r
+        const s = signature.s
+        const v = signature.recovery
 
-      let rHex = r.toString(16)
-      if (rHex.length % 2 !== 0) rHex = '0' + rHex
-      let sHex = s.toString(16)
-      if (sHex.length % 2 !== 0) sHex = '0' + sHex
+        let rHex = r.toString(16)
+        if (rHex.length % 2 !== 0) rHex = '0' + rHex
+        let sHex = s.toString(16)
+        if (sHex.length % 2 !== 0) sHex = '0' + sHex
 
-      const signedFields: Uint8Array[] = [
-        numberToMinimalBytes(chainId),
-        numberToMinimalBytes(nonce),
-        maxPriorityFeePerGas,
-        maxFeePerGas,
-        gasLimit,
-        to,
-        value,
-        data,
-        new Uint8Array([]), // access list placeholder
-      ]
+        const signedFields: Uint8Array[] = [
+          numberToMinimalBytes(chainId),
+          numberToMinimalBytes(nonce),
+          maxPriorityFeePerGas,
+          maxFeePerGas,
+          gasLimit,
+          to,
+          value,
+          data,
+          new Uint8Array([]), // access list placeholder
+        ]
 
-      const vBytes = numberToMinimalBytes(v)
-      const rBytes = hexToBytes(rHex)
-      const sBytes = hexToBytes(sHex)
+        const vBytes = numberToMinimalBytes(v)
+        const rBytes = hexToBytes(rHex)
+        const sBytes = hexToBytes(sHex)
 
-      const signedRlp = rlpEncodeEip1559Signed(signedFields, vBytes, rBytes, sBytes)
-      const signedTx = new Uint8Array(1 + signedRlp.length)
-      signedTx[0] = 0x02
-      signedTx.set(signedRlp, 1)
+        const signedRlp = rlpEncodeEip1559Signed(signedFields, vBytes, rBytes, sBytes)
+        const signedTx = new Uint8Array(1 + signedRlp.length)
+        signedTx[0] = 0x02
+        signedTx.set(signedRlp, 1)
 
-      return addHexPrefix(bytesToHex(signedTx))
-    } else {
-      // Legacy transaction
-      const gasPrice = tx.fee?.gasPrice
-        ? hexToMinimalBytes(tx.fee.gasPrice as string)
-        : new Uint8Array([])
-      const gasLimit = tx.fee?.gasLimit
-        ? hexToMinimalBytes(tx.fee.gasLimit as string)
-        : hexToMinimalBytes('0xC350') // 50000 default for Hedera
+        return addHexPrefix(bytesToHex(signedTx))
+      } else {
+        // Legacy transaction
+        const gasPrice = tx.fee?.gasPrice
+          ? hexToMinimalBytes(tx.fee.gasPrice as string)
+          : new Uint8Array([])
+        const gasLimit = tx.fee?.gasLimit
+          ? hexToMinimalBytes(tx.fee.gasLimit as string)
+          : hexToMinimalBytes('0xC350') // 50000 default for Hedera
 
-      // EIP-155 signing: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]
-      const signingFields: Uint8Array[] = [
-        numberToMinimalBytes(nonce),
-        gasPrice,
-        gasLimit,
-        to,
-        value,
-        data,
-        numberToMinimalBytes(chainId),
-        new Uint8Array([]),
-        new Uint8Array([]),
-      ]
+        // EIP-155 signing: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]
+        const signingFields: Uint8Array[] = [
+          numberToMinimalBytes(nonce),
+          gasPrice,
+          gasLimit,
+          to,
+          value,
+          data,
+          numberToMinimalBytes(chainId),
+          new Uint8Array([]),
+          new Uint8Array([]),
+        ]
 
-      const signingRlp = rlpEncode(signingFields)
-      const msgHash = keccak_256(signingRlp)
-      const signature = secp256k1.sign(msgHash, pkBytes)
+        const signingRlp = rlpEncode(signingFields)
+        const msgHash = keccak_256(signingRlp)
+        const signature = secp256k1.sign(msgHash, pkBytes)
 
-      const r = signature.r
-      const s = signature.s
-      // EIP-155: v = recovery + chainId * 2 + 35
-      const vVal = signature.recovery + chainId * 2 + 35
+        const r = signature.r
+        const s = signature.s
+        // EIP-155: v = recovery + chainId * 2 + 35
+        const vVal = signature.recovery + chainId * 2 + 35
 
-      let rHex = r.toString(16)
-      if (rHex.length % 2 !== 0) rHex = '0' + rHex
-      let sHex = s.toString(16)
-      if (sHex.length % 2 !== 0) sHex = '0' + sHex
+        let rHex = r.toString(16)
+        if (rHex.length % 2 !== 0) rHex = '0' + rHex
+        let sHex = s.toString(16)
+        if (sHex.length % 2 !== 0) sHex = '0' + sHex
 
-      const signedFields: Uint8Array[] = [
-        numberToMinimalBytes(nonce),
-        gasPrice,
-        gasLimit,
-        to,
-        value,
-        data,
-        numberToMinimalBytes(vVal),
-        hexToBytes(rHex),
-        hexToBytes(sHex),
-      ]
+        const signedFields: Uint8Array[] = [
+          numberToMinimalBytes(nonce),
+          gasPrice,
+          gasLimit,
+          to,
+          value,
+          data,
+          numberToMinimalBytes(vVal),
+          hexToBytes(rHex),
+          hexToBytes(sHex),
+        ]
 
-      const signedRlp = rlpEncode(signedFields)
-      return addHexPrefix(bytesToHex(signedRlp))
+        const signedRlp = rlpEncode(signedFields)
+        return addHexPrefix(bytesToHex(signedRlp))
+      }
+    } finally {
+      pkBytes.fill(0)
     }
   }
 
@@ -671,31 +683,35 @@ export class HederaEcdsaSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const prefix = new TextEncoder().encode(
+        `\x19Ethereum Signed Message:\n${msgBytes.length}`,
       )
+      const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
+      prefixedMsg.set(prefix, 0)
+      prefixedMsg.set(msgBytes, prefix.length)
+
+      const msgHash = keccak_256(prefixedMsg)
+      const signature = secp256k1.sign(msgHash, pkBytes)
+
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery + 27
+
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const prefix = new TextEncoder().encode(
-      `\x19Ethereum Signed Message:\n${msgBytes.length}`,
-    )
-    const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
-    prefixedMsg.set(prefix, 0)
-    prefixedMsg.set(msgBytes, prefix.length)
-
-    const msgHash = keccak_256(prefixedMsg)
-    const signature = secp256k1.sign(msgHash, pkBytes)
-
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery + 27
-
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
   }
 }

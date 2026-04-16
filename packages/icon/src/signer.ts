@@ -156,74 +156,78 @@ export class IconSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-    const nid = (tx.extra?.nid as string) ?? DEFAULT_NID
-    const version = '0x3'
-    const timestamp = (tx.extra?.timestamp as string) ?? '0x' + (Date.now() * 1000).toString(16)
+    try {
+      const nid = (tx.extra?.nid as string) ?? DEFAULT_NID
+      const version = '0x3'
+      const timestamp = (tx.extra?.timestamp as string) ?? '0x' + (Date.now() * 1000).toString(16)
 
-    // Build transaction parameters
-    const txParams: Record<string, unknown> = {
-      version,
-      from: tx.from,
-      to: tx.to,
-      nid,
-      timestamp,
-    }
-
-    // Add value if non-zero
-    if (tx.value && tx.value !== '0') {
-      const valueLoop = BigInt(tx.value as string)
-      txParams.value = '0x' + valueLoop.toString(16)
-    }
-
-    // Add step limit (gas equivalent)
-    if (tx.fee?.stepLimit) {
-      txParams.stepLimit = tx.fee.stepLimit
-    } else {
-      // Default step limit for ICX transfer: 100000
-      txParams.stepLimit = '0x186a0'
-    }
-
-    // Add nonce if provided
-    if (tx.nonce !== undefined) {
-      txParams.nonce = '0x' + tx.nonce.toString(16)
-    }
-
-    // Add data for SCORE calls
-    if (tx.extra?.dataType) {
-      txParams.dataType = tx.extra.dataType as string
-      if (tx.extra.data) {
-        txParams.data = tx.extra.data
-      } else if (tx.data) {
-        txParams.data = JSON.parse(tx.data as string)
+      // Build transaction parameters
+      const txParams: Record<string, unknown> = {
+        version,
+        from: tx.from,
+        to: tx.to,
+        nid,
+        timestamp,
       }
+
+      // Add value if non-zero
+      if (tx.value && tx.value !== '0') {
+        const valueLoop = BigInt(tx.value as string)
+        txParams.value = '0x' + valueLoop.toString(16)
+      }
+
+      // Add step limit (gas equivalent)
+      if (tx.fee?.stepLimit) {
+        txParams.stepLimit = tx.fee.stepLimit
+      } else {
+        // Default step limit for ICX transfer: 100000
+        txParams.stepLimit = '0x186a0'
+      }
+
+      // Add nonce if provided
+      if (tx.nonce !== undefined) {
+        txParams.nonce = '0x' + tx.nonce.toString(16)
+      }
+
+      // Add data for SCORE calls
+      if (tx.extra?.dataType) {
+        txParams.dataType = tx.extra.dataType as string
+        if (tx.extra.data) {
+          txParams.data = tx.extra.data
+        } else if (tx.data) {
+          txParams.data = JSON.parse(tx.data as string)
+        }
+      }
+
+      // Compute the transaction hash
+      const msgHash = computeTransactionHash(txParams)
+
+      // Sign with secp256k1
+      const signature = secp256k1.sign(msgHash, pkBytes)
+
+      // Encode signature: r (32 bytes) + s (32 bytes) + recovery (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const vByte = signature.recovery
+
+      const sigBytes = hexToBytes(rHex + sHex)
+      const fullSig = new Uint8Array(65)
+      fullSig.set(sigBytes, 0)
+      fullSig[64] = vByte
+
+      // Base64 encode the signature
+      const sigBase64 = btoa(String.fromCharCode(...fullSig))
+
+      // Add signature to transaction params
+      txParams.signature = sigBase64
+
+      // Return the signed transaction as a hex-encoded JSON string
+      const signedJson = JSON.stringify(txParams)
+      const jsonBytes = new TextEncoder().encode(signedJson)
+      return '0x' + bytesToHex(jsonBytes)
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Compute the transaction hash
-    const msgHash = computeTransactionHash(txParams)
-
-    // Sign with secp256k1
-    const signature = secp256k1.sign(msgHash, pkBytes)
-
-    // Encode signature: r (32 bytes) + s (32 bytes) + recovery (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const vByte = signature.recovery
-
-    const sigBytes = hexToBytes(rHex + sHex)
-    const fullSig = new Uint8Array(65)
-    fullSig.set(sigBytes, 0)
-    fullSig[64] = vByte
-
-    // Base64 encode the signature
-    const sigBase64 = btoa(String.fromCharCode(...fullSig))
-
-    // Add signature to transaction params
-    txParams.signature = sigBase64
-
-    // Return the signed transaction as a hex-encoded JSON string
-    const signedJson = JSON.stringify(txParams)
-    const jsonBytes = new TextEncoder().encode(signedJson)
-    return '0x' + bytesToHex(jsonBytes)
   }
 
   /**
@@ -246,21 +250,25 @@ export class IconSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with keccak256
-    const msgHash = keccak_256(msgBytes)
+      // Hash the message with keccak256
+      const msgHash = keccak_256(msgBytes)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery
+      // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery
 
-    return '0x' + rHex + sHex + v.toString(16).padStart(2, '0')
+      return '0x' + rHex + sHex + v.toString(16).padStart(2, '0')
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

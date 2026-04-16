@@ -586,67 +586,71 @@ export class TezosSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    let operationBytes: Uint8Array
-
-    if (tx.extra?.branch) {
-      // Structured forging mode: forge the operation from tx fields
-      const branch = tx.extra.branch as string
-      const counter = tx.extra.counter as string
-      const gasLimit = (tx.extra.gasLimit as string) ?? '10300'
-      const storageLimit = (tx.extra.storageLimit as string) ?? '0'
-      const fee = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? (tx.extra?.fee as string) ?? '0'
-
-      if (!tx.from || !tx.to || !counter) {
+      if (pkBytes.length !== 32) {
         throw new ChainKitError(
-          ErrorCode.INVALID_PARAMS,
-          'Structured forging requires: from, to, value, extra.branch, extra.counter',
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
         )
       }
 
-      operationBytes = forgeTransaction({
-        branch,
-        source: tx.from as string,
-        destination: tx.to,
-        amount: (tx.value ?? tx.amount ?? '0') as string,
-        fee,
-        counter,
-        gasLimit,
-        storageLimit,
-      })
-    } else if (tx.data) {
-      // Legacy mode: use pre-forged bytes
-      operationBytes = hexToBytes(stripHexPrefix(tx.data as string))
-    } else {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction requires either extra.branch (for forging) or data (pre-forged operation bytes)',
-      )
+      let operationBytes: Uint8Array
+
+      if (tx.extra?.branch) {
+        // Structured forging mode: forge the operation from tx fields
+        const branch = tx.extra.branch as string
+        const counter = tx.extra.counter as string
+        const gasLimit = (tx.extra.gasLimit as string) ?? '10300'
+        const storageLimit = (tx.extra.storageLimit as string) ?? '0'
+        const fee = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? (tx.extra?.fee as string) ?? '0'
+
+        if (!tx.from || !tx.to || !counter) {
+          throw new ChainKitError(
+            ErrorCode.INVALID_PARAMS,
+            'Structured forging requires: from, to, value, extra.branch, extra.counter',
+          )
+        }
+
+        operationBytes = forgeTransaction({
+          branch,
+          source: tx.from as string,
+          destination: tx.to,
+          amount: (tx.value ?? tx.amount ?? '0') as string,
+          fee,
+          counter,
+          gasLimit,
+          storageLimit,
+        })
+      } else if (tx.data) {
+        // Legacy mode: use pre-forged bytes
+        operationBytes = hexToBytes(stripHexPrefix(tx.data as string))
+      } else {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction requires either extra.branch (for forging) or data (pre-forged operation bytes)',
+        )
+      }
+
+      // Tezos signs blake2b-256 of (0x03 || operation_bytes)
+      // 0x03 is the watermark for generic operations
+      const watermarked = new Uint8Array(1 + operationBytes.length)
+      watermarked[0] = GENERIC_WATERMARK
+      watermarked.set(operationBytes, 1)
+      const hash = blake2b(watermarked, { dkLen: 32 })
+
+      // Sign with ED25519
+      const signature = ed25519.sign(hash, pkBytes)
+
+      // Return forged bytes + 64-byte signature
+      const result = new Uint8Array(operationBytes.length + signature.length)
+      result.set(operationBytes)
+      result.set(signature, operationBytes.length)
+
+      return addHexPrefix(bytesToHex(result))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Tezos signs blake2b-256 of (0x03 || operation_bytes)
-    // 0x03 is the watermark for generic operations
-    const watermarked = new Uint8Array(1 + operationBytes.length)
-    watermarked[0] = GENERIC_WATERMARK
-    watermarked.set(operationBytes, 1)
-    const hash = blake2b(watermarked, { dkLen: 32 })
-
-    // Sign with ED25519
-    const signature = ed25519.sign(hash, pkBytes)
-
-    // Return forged bytes + 64-byte signature
-    const result = new Uint8Array(operationBytes.length + signature.length)
-    result.set(operationBytes)
-    result.set(signature, operationBytes.length)
-
-    return addHexPrefix(bytesToHex(result))
   }
 
   /**
@@ -689,22 +693,26 @@ export class TezosSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      // Tezos message signing: blake2b-256 hash then sign
+      const hash = blake2b(msgBytes, { dkLen: 32 })
+      const signature = ed25519.sign(hash, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    // Tezos message signing: blake2b-256 hash then sign
-    const hash = blake2b(msgBytes, { dkLen: 32 })
-    const signature = ed25519.sign(hash, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }
 

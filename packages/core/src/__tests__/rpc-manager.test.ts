@@ -2,13 +2,34 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { RpcManager } from '../rpc/rpc-manager.js'
 import { ChainKitError, ErrorCode } from '../types/errors.js'
 
+/**
+ * Create a mock fetch that parses the request body to extract the JSON-RPC id
+ * and returns it in the response for proper ID validation.
+ */
 function createMockResponse(result: unknown): Response {
   return {
     ok: true,
     status: 200,
     statusText: 'OK',
     json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    _result: result,
   } as unknown as Response
+}
+
+/**
+ * Create a mock response factory that correctly mirrors the JSON-RPC request id.
+ * Use this with mockFetch.mockImplementation to get proper ID matching.
+ */
+function createIdAwareMockResponse(result: unknown) {
+  return (_url: string, options?: { body?: string }) => {
+    const id = options?.body ? JSON.parse(options.body).id : 1
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: () => Promise.resolve({ jsonrpc: '2.0', id, result }),
+    } as unknown as Response)
+  }
 }
 
 function createMockErrorResponse(code: number, message: string): Response {
@@ -125,7 +146,7 @@ describe('RpcManager', () => {
 
   describe('round-robin strategy', () => {
     it('should distribute requests across endpoints', async () => {
-      mockFetch.mockResolvedValue(createMockResponse('ok'))
+      mockFetch.mockImplementation(createIdAwareMockResponse('ok'))
 
       const manager = new RpcManager({
         endpoints: ['http://rpc1.test', 'http://rpc2.test', 'http://rpc3.test'],
@@ -143,7 +164,7 @@ describe('RpcManager', () => {
     })
 
     it('should wrap around endpoints', async () => {
-      mockFetch.mockResolvedValue(createMockResponse('ok'))
+      mockFetch.mockImplementation(createIdAwareMockResponse('ok'))
 
       const manager = new RpcManager({
         endpoints: ['http://rpc1.test', 'http://rpc2.test'],
@@ -161,12 +182,18 @@ describe('RpcManager', () => {
 
     it('should fall back to other endpoints on failure', async () => {
       let callCount = 0
-      mockFetch.mockImplementation((url: string) => {
+      mockFetch.mockImplementation((url: string, options?: { body?: string }) => {
         callCount++
         if (url === 'http://rpc1.test') {
           return Promise.reject(new Error('down'))
         }
-        return Promise.resolve(createMockResponse('ok'))
+        const id = options?.body ? JSON.parse(options.body).id : 1
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: () => Promise.resolve({ jsonrpc: '2.0', id, result: 'ok' }),
+        } as unknown as Response)
       })
 
       const manager = new RpcManager({

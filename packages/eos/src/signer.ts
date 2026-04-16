@@ -377,6 +377,7 @@ export class EosSigner implements ChainSigner {
     const { privateKey, tx } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
     const pkBytes = hexToBytes(pkHex)
+    try {
 
     const chainId = tx.extra?.chainId as string
     if (!chainId) {
@@ -404,6 +405,9 @@ export class EosSigner implements ChainSigner {
     // Return the SIG_K1_ string as the "hex" output
     // (EOS signatures are not raw hex but rather base58-encoded)
     return eosSig
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -436,6 +440,7 @@ export class EosSigner implements ChainSigner {
     const { privateKey, message } = params
     const pkHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey
     const pkBytes = hexToBytes(pkHex)
+    try {
 
     const msgBytes =
       typeof message === 'string' ? new TextEncoder().encode(message) : message
@@ -445,5 +450,8 @@ export class EosSigner implements ChainSigner {
 
     const compactSig = signature.toCompactRawBytes()
     return encodeEosSignature(compactSig, signature.recovery)
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

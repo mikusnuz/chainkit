@@ -252,144 +252,148 @@ export class BitcoinSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-    const publicKey = secp256k1.getPublicKey(pkBytes, true)
-    const pubkeyHash = hash160(publicKey)
+    try {
+      const publicKey = secp256k1.getPublicKey(pkBytes, true)
+      const pubkeyHash = hash160(publicKey)
 
-    const inputs = (tx.extra?.inputs as Array<{ txHash: string; outputIndex: number; value: string; script?: string }>) ?? []
-    const outputs = (tx.extra?.outputs as Array<{ address: string; value: string }>) ?? []
+      const inputs = (tx.extra?.inputs as Array<{ txHash: string; outputIndex: number; value: string; script?: string }>) ?? []
+      const outputs = (tx.extra?.outputs as Array<{ address: string; value: string }>) ?? []
 
-    if (inputs.length === 0) {
-      throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Transaction must have at least one input')
-    }
-    if (outputs.length === 0) {
-      throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Transaction must have at least one output')
-    }
-
-    // BIP143 SegWit signing for P2WPKH
-    const version = writeUint32LE(2) // version 2
-    const locktime = writeUint32LE(0)
-
-    // hashPrevouts: double SHA-256 of all input outpoints
-    const prevoutsData: Uint8Array[] = []
-    for (const input of inputs) {
-      const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
-      prevoutsData.push(txHashBytes)
-      prevoutsData.push(writeUint32LE(input.outputIndex))
-    }
-    const hashPrevouts = doubleSha256(concat(...prevoutsData))
-
-    // hashSequence: double SHA-256 of all input sequences (all 0xffffffff)
-    const sequenceData: Uint8Array[] = []
-    for (let i = 0; i < inputs.length; i++) {
-      sequenceData.push(writeUint32LE(0xffffffff))
-    }
-    const hashSequence = doubleSha256(concat(...sequenceData))
-
-    // hashOutputs: double SHA-256 of all output amounts + scriptPubKeys
-    const outputsData: Uint8Array[] = []
-    for (const output of outputs) {
-      const valueSatoshi = BigInt(output.value)
-      outputsData.push(writeUint64LE(valueSatoshi))
-
-      // Create scriptPubKey for the output address
-      const scriptPubKey = this.addressToScriptPubKey(output.address)
-      outputsData.push(encodeVarInt(scriptPubKey.length))
-      outputsData.push(scriptPubKey)
-    }
-    const hashOutputs = doubleSha256(concat(...outputsData))
-
-    // Sign each input
-    const witnesses: Uint8Array[][] = []
-
-    for (let i = 0; i < inputs.length; i++) {
-      const input = inputs[i]
-      const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
-      const outpoint = concat(txHashBytes, writeUint32LE(input.outputIndex))
-
-      // scriptCode for P2WPKH: OP_DUP OP_HASH160 <20-byte pubkey hash> OP_EQUALVERIFY OP_CHECKSIG
-      const scriptCode = concat(
-        new Uint8Array([0x19, 0x76, 0xa9, 0x14]),
-        pubkeyHash,
-        new Uint8Array([0x88, 0xac]),
-      )
-
-      const valueSatoshi = BigInt(input.value)
-      const sequence = writeUint32LE(0xffffffff)
-
-      // BIP143 sighash preimage
-      const preimage = concat(
-        version,
-        hashPrevouts,
-        hashSequence,
-        outpoint,
-        scriptCode,
-        writeUint64LE(valueSatoshi),
-        sequence,
-        hashOutputs,
-        locktime,
-        writeUint32LE(1), // SIGHASH_ALL
-      )
-
-      const sigHash = doubleSha256(preimage)
-      const signature = secp256k1.sign(sigHash, pkBytes).normalizeS()
-
-      // DER-encode the signature manually
-      const derSig = derEncodeSignature(signature.r, signature.s)
-      // Append SIGHASH_ALL byte
-      const sigWithHashType = concat(derSig, new Uint8Array([0x01]))
-
-      witnesses.push([sigWithHashType, publicKey])
-    }
-
-    // Serialize the signed transaction (SegWit format)
-    const txParts: Uint8Array[] = []
-
-    // Version
-    txParts.push(version)
-
-    // SegWit marker and flag
-    txParts.push(new Uint8Array([0x00, 0x01]))
-
-    // Input count
-    txParts.push(encodeVarInt(inputs.length))
-
-    // Inputs
-    for (const input of inputs) {
-      const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
-      txParts.push(txHashBytes)
-      txParts.push(writeUint32LE(input.outputIndex))
-      // Empty scriptSig for SegWit
-      txParts.push(new Uint8Array([0x00]))
-      txParts.push(writeUint32LE(0xffffffff))
-    }
-
-    // Output count
-    txParts.push(encodeVarInt(outputs.length))
-
-    // Outputs
-    for (const output of outputs) {
-      const valueSatoshi = BigInt(output.value)
-      txParts.push(writeUint64LE(valueSatoshi))
-
-      const scriptPubKey = this.addressToScriptPubKey(output.address)
-      txParts.push(encodeVarInt(scriptPubKey.length))
-      txParts.push(scriptPubKey)
-    }
-
-    // Witnesses
-    for (const witness of witnesses) {
-      txParts.push(encodeVarInt(witness.length))
-      for (const item of witness) {
-        txParts.push(encodeVarInt(item.length))
-        txParts.push(item)
+      if (inputs.length === 0) {
+        throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Transaction must have at least one input')
       }
+      if (outputs.length === 0) {
+        throw new ChainKitError(ErrorCode.INVALID_PARAMS, 'Transaction must have at least one output')
+      }
+
+      // BIP143 SegWit signing for P2WPKH
+      const version = writeUint32LE(2) // version 2
+      const locktime = writeUint32LE(0)
+
+      // hashPrevouts: double SHA-256 of all input outpoints
+      const prevoutsData: Uint8Array[] = []
+      for (const input of inputs) {
+        const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
+        prevoutsData.push(txHashBytes)
+        prevoutsData.push(writeUint32LE(input.outputIndex))
+      }
+      const hashPrevouts = doubleSha256(concat(...prevoutsData))
+
+      // hashSequence: double SHA-256 of all input sequences (all 0xffffffff)
+      const sequenceData: Uint8Array[] = []
+      for (let i = 0; i < inputs.length; i++) {
+        sequenceData.push(writeUint32LE(0xffffffff))
+      }
+      const hashSequence = doubleSha256(concat(...sequenceData))
+
+      // hashOutputs: double SHA-256 of all output amounts + scriptPubKeys
+      const outputsData: Uint8Array[] = []
+      for (const output of outputs) {
+        const valueSatoshi = BigInt(output.value)
+        outputsData.push(writeUint64LE(valueSatoshi))
+
+        // Create scriptPubKey for the output address
+        const scriptPubKey = this.addressToScriptPubKey(output.address)
+        outputsData.push(encodeVarInt(scriptPubKey.length))
+        outputsData.push(scriptPubKey)
+      }
+      const hashOutputs = doubleSha256(concat(...outputsData))
+
+      // Sign each input
+      const witnesses: Uint8Array[][] = []
+
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i]
+        const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
+        const outpoint = concat(txHashBytes, writeUint32LE(input.outputIndex))
+
+        // scriptCode for P2WPKH: OP_DUP OP_HASH160 <20-byte pubkey hash> OP_EQUALVERIFY OP_CHECKSIG
+        const scriptCode = concat(
+          new Uint8Array([0x19, 0x76, 0xa9, 0x14]),
+          pubkeyHash,
+          new Uint8Array([0x88, 0xac]),
+        )
+
+        const valueSatoshi = BigInt(input.value)
+        const sequence = writeUint32LE(0xffffffff)
+
+        // BIP143 sighash preimage
+        const preimage = concat(
+          version,
+          hashPrevouts,
+          hashSequence,
+          outpoint,
+          scriptCode,
+          writeUint64LE(valueSatoshi),
+          sequence,
+          hashOutputs,
+          locktime,
+          writeUint32LE(1), // SIGHASH_ALL
+        )
+
+        const sigHash = doubleSha256(preimage)
+        const signature = secp256k1.sign(sigHash, pkBytes).normalizeS()
+
+        // DER-encode the signature manually
+        const derSig = derEncodeSignature(signature.r, signature.s)
+        // Append SIGHASH_ALL byte
+        const sigWithHashType = concat(derSig, new Uint8Array([0x01]))
+
+        witnesses.push([sigWithHashType, publicKey])
+      }
+
+      // Serialize the signed transaction (SegWit format)
+      const txParts: Uint8Array[] = []
+
+      // Version
+      txParts.push(version)
+
+      // SegWit marker and flag
+      txParts.push(new Uint8Array([0x00, 0x01]))
+
+      // Input count
+      txParts.push(encodeVarInt(inputs.length))
+
+      // Inputs
+      for (const input of inputs) {
+        const txHashBytes = reverseBytes(hexToBytes(stripHexPrefix(input.txHash)))
+        txParts.push(txHashBytes)
+        txParts.push(writeUint32LE(input.outputIndex))
+        // Empty scriptSig for SegWit
+        txParts.push(new Uint8Array([0x00]))
+        txParts.push(writeUint32LE(0xffffffff))
+      }
+
+      // Output count
+      txParts.push(encodeVarInt(outputs.length))
+
+      // Outputs
+      for (const output of outputs) {
+        const valueSatoshi = BigInt(output.value)
+        txParts.push(writeUint64LE(valueSatoshi))
+
+        const scriptPubKey = this.addressToScriptPubKey(output.address)
+        txParts.push(encodeVarInt(scriptPubKey.length))
+        txParts.push(scriptPubKey)
+      }
+
+      // Witnesses
+      for (const witness of witnesses) {
+        txParts.push(encodeVarInt(witness.length))
+        for (const item of witness) {
+          txParts.push(encodeVarInt(item.length))
+          txParts.push(item)
+        }
+      }
+
+      // Locktime
+      txParts.push(locktime)
+
+      const rawTx = concat(...txParts)
+      return addHexPrefix(bytesToHex(rawTx))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Locktime
-    txParts.push(locktime)
-
-    const rawTx = concat(...txParts)
-    return addHexPrefix(bytesToHex(rawTx))
   }
 
   /**
@@ -398,6 +402,14 @@ export class BitcoinSigner implements ChainSigner {
    */
   validateAddress(address: string): boolean {
     try {
+      // SA-011: Network enforcement - reject addresses for the wrong network
+      if (this.network === 'mainnet' && (address.startsWith('tb1') || address.startsWith('m') || address.startsWith('n'))) {
+        return false
+      }
+      if (this.network === 'testnet' && (address.startsWith('bc1') || address.startsWith('1') || address.startsWith('3'))) {
+        return false
+      }
+
       if (address.startsWith('bc1') || address.startsWith('tb1')) {
         const hrp = address.startsWith('bc1') ? 'bc' : 'tb'
         const decoded = bech32.decodeUnsafe(address)
@@ -423,32 +435,36 @@ export class BitcoinSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Bitcoin message prefix
-    const prefix = new TextEncoder().encode('\x18Bitcoin Signed Message:\n')
-    const msgLenVarInt = encodeVarInt(msgBytes.length)
+      // Bitcoin message prefix
+      const prefix = new TextEncoder().encode('\x18Bitcoin Signed Message:\n')
+      const msgLenVarInt = encodeVarInt(msgBytes.length)
 
-    const prefixedMsg = concat(prefix, msgLenVarInt, msgBytes)
+      const prefixedMsg = concat(prefix, msgLenVarInt, msgBytes)
 
-    // Double SHA-256 hash
-    const msgHash = doubleSha256(prefixedMsg)
+      // Double SHA-256 hash
+      const msgHash = doubleSha256(prefixedMsg)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Encode as compact signature: recovery flag (1 byte) + r (32 bytes) + s (32 bytes)
-    // Recovery flag for compressed key: 31 + recovery
-    const recoveryFlag = 31 + signature.recovery
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
+      // Encode as compact signature: recovery flag (1 byte) + r (32 bytes) + s (32 bytes)
+      // Recovery flag for compressed key: 31 + recovery
+      const recoveryFlag = 31 + signature.recovery
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
 
-    return addHexPrefix(
-      recoveryFlag.toString(16).padStart(2, '0') + rHex + sHex,
-    )
+      return addHexPrefix(
+        recoveryFlag.toString(16).padStart(2, '0') + rHex + sHex,
+      )
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**

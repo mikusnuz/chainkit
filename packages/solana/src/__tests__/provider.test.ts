@@ -8,7 +8,7 @@ import { SolanaProvider } from '../provider.js'
 function mockRpcResponse(result: unknown) {
   return vi.fn().mockResolvedValue({
     ok: true,
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', result }),
   })
 }
 
@@ -27,8 +27,7 @@ function mockRpcSequence(results: unknown[]) {
 function mockRpcError(code: number, message: string) {
   return vi.fn().mockResolvedValue({
     ok: true,
-    json: () =>
-      Promise.resolve({ jsonrpc: '2.0', id: 1, error: { code, message } }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', error: { code, message } }),
   })
 }
 

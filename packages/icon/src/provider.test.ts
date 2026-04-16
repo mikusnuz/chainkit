@@ -8,14 +8,14 @@ vi.stubGlobal('fetch', mockFetch)
 function mockRpcResponse(result: unknown) {
   return {
     ok: true,
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', result }),
   }
 }
 
 function mockRpcError(code: number, message: string) {
   return {
     ok: true,
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, error: { code, message } }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', error: { code, message } }),
   }
 }
 

@@ -413,75 +413,79 @@ export class XrpSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-    const publicKey = secp256k1.getPublicKey(pkBytes, true)
+    try {
+      const publicKey = secp256k1.getPublicKey(pkBytes, true)
 
-    const txType = (tx.extra?.transactionType as string) ?? 'Payment'
-    const txTypeCode = TX_TYPES[txType]
-    if (txTypeCode === undefined) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        `Unsupported transaction type: ${txType}`,
-      )
-    }
+      const txType = (tx.extra?.transactionType as string) ?? 'Payment'
+      const txTypeCode = TX_TYPES[txType]
+      if (txTypeCode === undefined) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          `Unsupported transaction type: ${txType}`,
+        )
+      }
 
-    const sequence = tx.nonce ?? 0
-    const fee = tx.fee?.fee ?? '12'
-    const amount = tx.value ?? '0'
-    const flags = (tx.extra?.flags as number) ?? 0
+      const sequence = tx.nonce ?? 0
+      const fee = tx.fee?.fee ?? '12'
+      const amount = tx.value ?? '0'
+      const flags = (tx.extra?.flags as number) ?? 0
 
-    // Build field list for signing (without TxnSignature)
-    const fields: Array<{ name: string; encode: () => Uint8Array }> = [
-      { name: 'TransactionType', encode: () => encodeUInt16('TransactionType', txTypeCode) },
-      { name: 'Flags', encode: () => encodeUInt32('Flags', flags) },
-      { name: 'Sequence', encode: () => encodeUInt32('Sequence', sequence) },
-      { name: 'Amount', encode: () => encodeXrpAmount('Amount', amount) },
-      { name: 'Fee', encode: () => encodeXrpAmount('Fee', fee) },
-      { name: 'SigningPubKey', encode: () => encodeBlob('SigningPubKey', publicKey) },
-      { name: 'Account', encode: () => encodeAccountId('Account', tx.from as string) },
-      { name: 'Destination', encode: () => encodeAccountId('Destination', tx.to) },
-    ]
+      // Build field list for signing (without TxnSignature)
+      const fields: Array<{ name: string; encode: () => Uint8Array }> = [
+        { name: 'TransactionType', encode: () => encodeUInt16('TransactionType', txTypeCode) },
+        { name: 'Flags', encode: () => encodeUInt32('Flags', flags) },
+        { name: 'Sequence', encode: () => encodeUInt32('Sequence', sequence) },
+        { name: 'Amount', encode: () => encodeXrpAmount('Amount', amount) },
+        { name: 'Fee', encode: () => encodeXrpAmount('Fee', fee) },
+        { name: 'SigningPubKey', encode: () => encodeBlob('SigningPubKey', publicKey) },
+        { name: 'Account', encode: () => encodeAccountId('Account', tx.from as string) },
+        { name: 'Destination', encode: () => encodeAccountId('Destination', tx.to) },
+      ]
 
-    // Optional fields
-    const destinationTag = tx.extra?.destinationTag as number | undefined
-    if (destinationTag !== undefined) {
+      // Optional fields
+      const destinationTag = tx.extra?.destinationTag as number | undefined
+      if (destinationTag !== undefined) {
+        fields.push({
+          name: 'DestinationTag',
+          encode: () => encodeUInt32('DestinationTag', destinationTag),
+        })
+      }
+
+      const lastLedgerSequence = tx.extra?.lastLedgerSequence as number | undefined
+      if (lastLedgerSequence !== undefined) {
+        fields.push({
+          name: 'LastLedgerSequence',
+          encode: () => encodeUInt32('LastLedgerSequence', lastLedgerSequence),
+        })
+      }
+
+      // Serialize for signing
+      const serialized = serializeTransaction(fields)
+
+      // Hash: HASH_PREFIX_SIGN + serialized, then SHA-512Half
+      // XRP uses SHA-512 and takes first 32 bytes (SHA-512Half)
+      // However, for secp256k1 signing, the message must be 32 bytes
+      // XRP actually uses the half-SHA-512 of the signing prefix + serialized data
+      const signingData = concatBytes(HASH_PREFIX_SIGN, serialized)
+      const hash = sha512(signingData).slice(0, 32)
+
+      // Sign with secp256k1
+      const signature = secp256k1.sign(hash, pkBytes)
+
+      // Encode signature as DER
+      const derSignature = signatureToDER(signature.r, signature.s)
+
+      // Build the full signed transaction (with TxnSignature field)
       fields.push({
-        name: 'DestinationTag',
-        encode: () => encodeUInt32('DestinationTag', destinationTag),
+        name: 'TxnSignature',
+        encode: () => encodeBlob('TxnSignature', derSignature),
       })
+
+      const signedSerialized = serializeTransaction(fields)
+      return addHexPrefix(bytesToHex(signedSerialized))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const lastLedgerSequence = tx.extra?.lastLedgerSequence as number | undefined
-    if (lastLedgerSequence !== undefined) {
-      fields.push({
-        name: 'LastLedgerSequence',
-        encode: () => encodeUInt32('LastLedgerSequence', lastLedgerSequence),
-      })
-    }
-
-    // Serialize for signing
-    const serialized = serializeTransaction(fields)
-
-    // Hash: HASH_PREFIX_SIGN + serialized, then SHA-512Half
-    // XRP uses SHA-512 and takes first 32 bytes (SHA-512Half)
-    // However, for secp256k1 signing, the message must be 32 bytes
-    // XRP actually uses the half-SHA-512 of the signing prefix + serialized data
-    const signingData = concatBytes(HASH_PREFIX_SIGN, serialized)
-    const hash = sha512(signingData).slice(0, 32)
-
-    // Sign with secp256k1
-    const signature = secp256k1.sign(hash, pkBytes)
-
-    // Encode signature as DER
-    const derSignature = signatureToDER(signature.r, signature.s)
-
-    // Build the full signed transaction (with TxnSignature field)
-    fields.push({
-      name: 'TxnSignature',
-      encode: () => encodeBlob('TxnSignature', derSignature),
-    })
-
-    const signedSerialized = serializeTransaction(fields)
-    return addHexPrefix(bytesToHex(signedSerialized))
   }
 
   /**
@@ -506,17 +510,21 @@ export class XrpSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Double SHA-256 hash (consistent with XRP's hashing convention)
-    const hash = sha256(sha256(msgBytes))
+      // Double SHA-256 hash (consistent with XRP's hashing convention)
+      const hash = sha256(sha256(msgBytes))
 
-    const signature = secp256k1.sign(hash, pkBytes)
+      const signature = secp256k1.sign(hash, pkBytes)
 
-    // Return DER-encoded signature as hex
-    const derSig = signatureToDER(signature.r, signature.s)
-    return addHexPrefix(bytesToHex(derSig))
+      // Return DER-encoded signature as hex
+      const derSig = signatureToDER(signature.r, signature.s)
+      return addHexPrefix(bytesToHex(derSig))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

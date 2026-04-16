@@ -412,68 +412,72 @@ export class CardanoSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    const publicKey = ed25519.getPublicKey(pkBytes)
-
-    // Structured Cardano transaction data path
-    const cardanoData = tx.extra?.cardano as CardanoTransactionData | undefined
-    if (cardanoData) {
-      if (!cardanoData.inputs || cardanoData.inputs.length === 0) {
+      if (pkBytes.length !== 32) {
         throw new ChainKitError(
-          ErrorCode.INVALID_PARAMS,
-          'Transaction must have at least one input',
-        )
-      }
-      if (!cardanoData.outputs || cardanoData.outputs.length === 0) {
-        throw new ChainKitError(
-          ErrorCode.INVALID_PARAMS,
-          'Transaction must have at least one output',
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
         )
       }
 
-      // 1. CBOR encode the transaction body
-      const txBodyCbor = encodeTransactionBody(cardanoData)
+      const publicKey = ed25519.getPublicKey(pkBytes)
 
-      // 2. blake2b-256 hash of the CBOR bytes
-      const txBodyHash = blake2b(txBodyCbor, { dkLen: 32 })
+      // Structured Cardano transaction data path
+      const cardanoData = tx.extra?.cardano as CardanoTransactionData | undefined
+      if (cardanoData) {
+        if (!cardanoData.inputs || cardanoData.inputs.length === 0) {
+          throw new ChainKitError(
+            ErrorCode.INVALID_PARAMS,
+            'Transaction must have at least one input',
+          )
+        }
+        if (!cardanoData.outputs || cardanoData.outputs.length === 0) {
+          throw new ChainKitError(
+            ErrorCode.INVALID_PARAMS,
+            'Transaction must have at least one output',
+          )
+        }
 
-      // 3. ED25519 sign the hash
-      const signature = ed25519.sign(txBodyHash, pkBytes)
+        // 1. CBOR encode the transaction body
+        const txBodyCbor = encodeTransactionBody(cardanoData)
 
-      // 4. Build witness set
-      const witnessSetCbor = encodeWitnessSet(publicKey, signature)
+        // 2. blake2b-256 hash of the CBOR bytes
+        const txBodyHash = blake2b(txBodyCbor, { dkLen: 32 })
 
-      // 5. Assemble and return full serialized transaction
-      const fullTxCbor = encodeFullTransaction(txBodyCbor, witnessSetCbor)
-      return addHexPrefix(bytesToHex(fullTxCbor))
+        // 3. ED25519 sign the hash
+        const signature = ed25519.sign(txBodyHash, pkBytes)
+
+        // 4. Build witness set
+        const witnessSetCbor = encodeWitnessSet(publicKey, signature)
+
+        // 5. Assemble and return full serialized transaction
+        const fullTxCbor = encodeFullTransaction(txBodyCbor, witnessSetCbor)
+        return addHexPrefix(bytesToHex(fullTxCbor))
+      }
+
+      // Legacy mode: sign a pre-computed hash from tx.data
+      if (!tx.data) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction data is required: provide either extra.cardano (structured) or data (body hash hex)',
+        )
+      }
+
+      const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+
+      // If the data is not already a 32-byte hash, hash it with blake2b-256
+      const hashToSign = messageBytes.length === 32
+        ? messageBytes
+        : blake2b(messageBytes, { dkLen: 32 })
+
+      // Sign with ED25519
+      const signature = ed25519.sign(hashToSign, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Legacy mode: sign a pre-computed hash from tx.data
-    if (!tx.data) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction data is required: provide either extra.cardano (structured) or data (body hash hex)',
-      )
-    }
-
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
-
-    // If the data is not already a 32-byte hash, hash it with blake2b-256
-    const hashToSign = messageBytes.length === 32
-      ? messageBytes
-      : blake2b(messageBytes, { dkLen: 32 })
-
-    // Sign with ED25519
-    const signature = ed25519.sign(hashToSign, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 
   /**
@@ -498,19 +502,23 @@ export class CardanoSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }

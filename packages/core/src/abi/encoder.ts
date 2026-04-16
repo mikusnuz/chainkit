@@ -72,6 +72,9 @@ export function encodeAddress(address: string): string {
   if (clean.length > 40) {
     throw new Error(`Invalid address length: ${clean.length}`)
   }
+  if (!/^[0-9a-fA-F]{1,40}$/.test(clean)) {
+    throw new Error('Invalid address: must be hex characters only')
+  }
   return clean.toLowerCase().padStart(64, '0')
 }
 
@@ -97,7 +100,12 @@ export function encodeUint256(value: string | number | bigint): string {
   }
 
   if (n < 0n) {
-    throw new Error('encodeUint256 does not accept negative values; use encodeInt256 instead')
+    throw new Error('Value must be non-negative for uint256')
+  }
+
+  const MAX_UINT256 = (1n << 256n) - 1n
+  if (n > MAX_UINT256) {
+    throw new Error('Value exceeds uint256 max')
   }
 
   return n.toString(16).padStart(64, '0')

@@ -44,6 +44,18 @@ export interface JsonRpcResponse<T = unknown> {
 }
 
 /**
+ * Redact RPC URL to avoid leaking API keys or sensitive path info in error messages.
+ */
+function redactUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.protocol}//${u.hostname}/...`
+  } catch {
+    return '<invalid-url>'
+  }
+}
+
+/**
  * Manages multiple RPC endpoints with failover, round-robin, and fastest strategies.
  */
 export class RpcManager {
@@ -63,6 +75,14 @@ export class RpcManager {
     this.timeout = config.timeout ?? 10000
     this.retries = config.retries ?? 2
     this.strategy = config.strategy ?? 'failover'
+
+    // SA-005: Warn about insecure RPC endpoints
+    for (const endpoint of this.endpoints) {
+      const url = typeof endpoint === 'string' ? endpoint : endpoint
+      if (!url.startsWith('https://') && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')) {
+        console.warn(`[ChainKit] WARNING: Insecure RPC endpoint: ${url}. Use HTTPS in production.`)
+      }
+    }
   }
 
   /**
@@ -267,16 +287,30 @@ export class RpcManager {
 
       if (!response.ok) {
         throw new ChainKitError(ErrorCode.NETWORK_ERROR, `HTTP ${response.status}: ${response.statusText}`, {
-          endpoint,
+          endpoint: redactUrl(endpoint),
           status: response.status,
         })
       }
 
       const json = (await response.json()) as JsonRpcResponse<T>
 
+      // SA-004: Validate JSON-RPC response structure
+      if (typeof json !== 'object' || json === null || json.jsonrpc !== '2.0') {
+        throw new ChainKitError(ErrorCode.RPC_INVALID_RESPONSE, 'Invalid JSON-RPC response', {
+          endpoint: redactUrl(endpoint),
+        })
+      }
+
+      // SA-015: Validate response ID matches request ID
+      if (json.id !== undefined && json.id !== rpcRequest.id) {
+        throw new ChainKitError(ErrorCode.RPC_INVALID_RESPONSE, 'JSON-RPC response ID mismatch', {
+          endpoint: redactUrl(endpoint),
+        })
+      }
+
       if (json.error) {
         throw new ChainKitError(ErrorCode.RPC_ERROR, json.error.message, {
-          endpoint,
+          endpoint: redactUrl(endpoint),
           rpcCode: json.error.code,
           rpcData: json.error.data,
         })
@@ -288,13 +322,13 @@ export class RpcManager {
         throw err
       }
       if (err instanceof DOMException || (err instanceof Error && err.name === 'AbortError')) {
-        throw new ChainKitError(ErrorCode.TIMEOUT, `Request to ${endpoint} timed out`, {
-          endpoint,
+        throw new ChainKitError(ErrorCode.TIMEOUT, `Request to ${redactUrl(endpoint)} timed out`, {
+          endpoint: redactUrl(endpoint),
           timeout: this.timeout,
         })
       }
-      throw new ChainKitError(ErrorCode.NETWORK_ERROR, `Request to ${endpoint} failed: ${(err as Error).message}`, {
-        endpoint,
+      throw new ChainKitError(ErrorCode.NETWORK_ERROR, `Request to ${redactUrl(endpoint)} failed: ${(err as Error).message}`, {
+        endpoint: redactUrl(endpoint),
       })
     } finally {
       clearTimeout(timer)

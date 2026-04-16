@@ -502,78 +502,82 @@ export class IotaSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    if (!tx.data) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction data is required for IOTA signing',
-      )
-    }
-
-    const publicKey = ed25519.getPublicKey(pkBytes)
-
-    // Check if raw mode is requested (backward-compatible: pre-serialized essence bytes)
-    if (tx.fee?.mode === 'raw') {
-      const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
-      const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
-      const signature = ed25519.sign(essenceHash, pkBytes)
-      return addHexPrefix(bytesToHex(signature))
-    }
-
-    // Structured mode: parse IotaTransactionEssence from tx.data
-    let essence: IotaTransactionEssence
     try {
-      essence = JSON.parse(tx.data as string) as IotaTransactionEssence
-    } catch {
-      // Fallback: treat as raw hex essence bytes (backward compatibility)
-      const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
+
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      if (!tx.data) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction data is required for IOTA signing',
+        )
+      }
+
+      const publicKey = ed25519.getPublicKey(pkBytes)
+
+      // Check if raw mode is requested (backward-compatible: pre-serialized essence bytes)
+      if (tx.fee?.mode === 'raw') {
+        const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
+        const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
+        const signature = ed25519.sign(essenceHash, pkBytes)
+        return addHexPrefix(bytesToHex(signature))
+      }
+
+      // Structured mode: parse IotaTransactionEssence from tx.data
+      let essence: IotaTransactionEssence
+      try {
+        essence = JSON.parse(tx.data as string) as IotaTransactionEssence
+      } catch {
+        // Fallback: treat as raw hex essence bytes (backward compatibility)
+        const essenceBytes = hexToBytes(stripHexPrefix(tx.data as string))
+        const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
+        const signature = ed25519.sign(essenceHash, pkBytes)
+        return addHexPrefix(bytesToHex(signature))
+      }
+
+      // Validate the parsed essence has required fields
+      if (!essence.networkId || !essence.inputs || !essence.outputs) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Invalid transaction essence: networkId, inputs, and outputs are required',
+        )
+      }
+
+      if (essence.inputs.length === 0) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have at least one input',
+        )
+      }
+
+      if (essence.outputs.length === 0) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have at least one output',
+        )
+      }
+
+      // Serialize the transaction essence to binary
+      const essenceBytes = serializeTransactionEssence(essence)
+
+      // Hash the essence with blake2b-256
       const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
+
+      // Sign the hash with ED25519
       const signature = ed25519.sign(essenceHash, pkBytes)
-      return addHexPrefix(bytesToHex(signature))
+
+      // Build the complete TransactionPayload
+      const payload = buildTransactionPayload(essence, publicKey, signature)
+
+      return addHexPrefix(bytesToHex(payload))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Validate the parsed essence has required fields
-    if (!essence.networkId || !essence.inputs || !essence.outputs) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Invalid transaction essence: networkId, inputs, and outputs are required',
-      )
-    }
-
-    if (essence.inputs.length === 0) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction must have at least one input',
-      )
-    }
-
-    if (essence.outputs.length === 0) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction must have at least one output',
-      )
-    }
-
-    // Serialize the transaction essence to binary
-    const essenceBytes = serializeTransactionEssence(essence)
-
-    // Hash the essence with blake2b-256
-    const essenceHash = blake2b(essenceBytes, { dkLen: 32 })
-
-    // Sign the hash with ED25519
-    const signature = ed25519.sign(essenceHash, pkBytes)
-
-    // Build the complete TransactionPayload
-    const payload = buildTransactionPayload(essence, publicKey, signature)
-
-    return addHexPrefix(bytesToHex(payload))
   }
 
   /**
@@ -598,19 +602,23 @@ export class IotaSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }

@@ -218,46 +218,50 @@ export class MultiversXSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    // Build the transaction object for signing
-    // MultiversX signs the JSON-serialized transaction
-    let messageBytes: Uint8Array
-
-    if (tx.data) {
-      // If tx.data is provided, use it as the serialized transaction message
-      messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
-    } else {
-      // Build a transaction JSON from the UnsignedTx fields
-      const txObj: Record<string, unknown> = {
-        nonce: tx.nonce ?? 0,
-        value: tx.value,
-        receiver: tx.to,
-        sender: tx.from,
-        gasPrice: tx.fee?.gasPrice ? parseInt(tx.fee.gasPrice, 10) : 1000000000,
-        gasLimit: tx.fee?.gasLimit ? parseInt(tx.fee.gasLimit, 10) : 50000,
-        chainID: (tx.extra?.chainID as string) ?? '1',
-        version: (tx.extra?.version as number) ?? 1,
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
       }
 
-      if (tx.extra?.data) {
-        txObj.data = btoa(tx.extra.data as string)
+      // Build the transaction object for signing
+      // MultiversX signs the JSON-serialized transaction
+      let messageBytes: Uint8Array
+
+      if (tx.data) {
+        // If tx.data is provided, use it as the serialized transaction message
+        messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+      } else {
+        // Build a transaction JSON from the UnsignedTx fields
+        const txObj: Record<string, unknown> = {
+          nonce: tx.nonce ?? 0,
+          value: tx.value,
+          receiver: tx.to,
+          sender: tx.from,
+          gasPrice: tx.fee?.gasPrice ? parseInt(tx.fee.gasPrice, 10) : 1000000000,
+          gasLimit: tx.fee?.gasLimit ? parseInt(tx.fee.gasLimit, 10) : 50000,
+          chainID: (tx.extra?.chainID as string) ?? '1',
+          version: (tx.extra?.version as number) ?? 1,
+        }
+
+        if (tx.extra?.data) {
+          txObj.data = btoa(tx.extra.data as string)
+        }
+
+        const jsonStr = JSON.stringify(txObj)
+        messageBytes = new TextEncoder().encode(jsonStr)
       }
 
-      const jsonStr = JSON.stringify(txObj)
-      messageBytes = new TextEncoder().encode(jsonStr)
+      // Sign with ED25519
+      const signature = ed25519.sign(messageBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Sign with ED25519
-    const signature = ed25519.sign(messageBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 
   /**
@@ -282,20 +286,24 @@ export class MultiversXSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }
 

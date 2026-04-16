@@ -286,21 +286,25 @@ export class StarknetSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (!tx.data) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction data (serialized message hash) is required for StarkNet signing',
-      )
+      if (!tx.data) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction data (serialized message hash) is required for StarkNet signing',
+        )
+      }
+
+      // The data field contains the hash to sign
+      const msgHash = hexToBytes(stripHexPrefix(tx.data as string))
+
+      const signature = starkCurve.sign(msgHash, pkBytes, { prehash: false, lowS: false })
+      const sigBytes = signature.toCompactRawBytes()
+
+      return addHexPrefix(bytesToHex(sigBytes))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // The data field contains the hash to sign
-    const msgHash = hexToBytes(stripHexPrefix(tx.data as string))
-
-    const signature = starkCurve.sign(msgHash, pkBytes, { prehash: false, lowS: false })
-    const sigBytes = signature.toCompactRawBytes()
-
-    return addHexPrefix(bytesToHex(sigBytes))
   }
 
   /**
@@ -327,17 +331,21 @@ export class StarknetSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with SHA-256 (configured as the curve hash)
-    const msgHash = sha256(msgBytes)
+      // Hash the message with SHA-256 (configured as the curve hash)
+      const msgHash = sha256(msgBytes)
 
-    const signature = starkCurve.sign(msgHash, pkBytes, { prehash: false, lowS: false })
-    const sigBytes = signature.toCompactRawBytes()
+      const signature = starkCurve.sign(msgHash, pkBytes, { prehash: false, lowS: false })
+      const sigBytes = signature.toCompactRawBytes()
 
-    return addHexPrefix(bytesToHex(sigBytes))
+      return addHexPrefix(bytesToHex(sigBytes))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }
 

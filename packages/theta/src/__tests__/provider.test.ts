@@ -6,7 +6,7 @@ function createMockResponse(result: unknown): Response {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', result }),
   } as unknown as Response
 }
 

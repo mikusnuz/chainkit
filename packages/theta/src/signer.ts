@@ -225,60 +225,70 @@ export class ThetaSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-    const chainId = (tx.extra?.chainId as number) ?? 361 // Theta mainnet chain ID
-    const nonce = tx.nonce ?? 0
-    const to = hexToBytes(stripHexPrefix(tx.to))
-    const value = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
-    const data = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
+    try {
+      const chainId = tx.extra?.chainId as number | undefined
+      if (chainId === undefined) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'chainId is required in tx.extra for EIP-155 replay protection',
+        )
+      }
+      const nonce = tx.nonce ?? 0
+      const to = hexToBytes(stripHexPrefix(tx.to))
+      const value = tx.value ? decimalToMinimalBytes(tx.value) : new Uint8Array([])
+      const data = tx.data ? hexToBytes(stripHexPrefix(tx.data as string)) : new Uint8Array([])
 
-    const gasPrice = tx.fee?.gasPrice
-      ? hexToMinimalBytes(tx.fee.gasPrice as string)
-      : new Uint8Array([])
-    const gasLimit = tx.fee?.gasLimit
-      ? hexToMinimalBytes(tx.fee.gasLimit as string)
-      : hexToMinimalBytes('0x5208') // 21000 default
+      const gasPrice = tx.fee?.gasPrice
+        ? hexToMinimalBytes(tx.fee.gasPrice as string)
+        : new Uint8Array([])
+      const gasLimit = tx.fee?.gasLimit
+        ? hexToMinimalBytes(tx.fee.gasLimit as string)
+        : hexToMinimalBytes('0x5208') // 21000 default
 
-    // EIP-155 signing: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]
-    const signingFields: Uint8Array[] = [
-      numberToMinimalBytes(nonce),
-      gasPrice,
-      gasLimit,
-      to,
-      value,
-      data,
-      numberToMinimalBytes(chainId),
-      new Uint8Array([]),
-      new Uint8Array([]),
-    ]
+      // EIP-155 signing: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]
+      const signingFields: Uint8Array[] = [
+        numberToMinimalBytes(nonce),
+        gasPrice,
+        gasLimit,
+        to,
+        value,
+        data,
+        numberToMinimalBytes(chainId),
+        new Uint8Array([]),
+        new Uint8Array([]),
+      ]
 
-    const signingRlp = rlpEncode(signingFields)
-    const msgHash = keccak_256(signingRlp)
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      const signingRlp = rlpEncode(signingFields)
+      const msgHash = keccak_256(signingRlp)
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    const r = signature.r
-    const s = signature.s
-    // EIP-155: v = recovery + chainId * 2 + 35
-    const vVal = signature.recovery + chainId * 2 + 35
+      const r = signature.r
+      const s = signature.s
+      // EIP-155: v = recovery + chainId * 2 + 35
+      const vVal = signature.recovery + chainId * 2 + 35
 
-    let rHex = r.toString(16)
-    if (rHex.length % 2 !== 0) rHex = '0' + rHex
-    let sHex = s.toString(16)
-    if (sHex.length % 2 !== 0) sHex = '0' + sHex
+      let rHex = r.toString(16)
+      if (rHex.length % 2 !== 0) rHex = '0' + rHex
+      let sHex = s.toString(16)
+      if (sHex.length % 2 !== 0) sHex = '0' + sHex
 
-    const signedFields: Uint8Array[] = [
-      numberToMinimalBytes(nonce),
-      gasPrice,
-      gasLimit,
-      to,
-      value,
-      data,
-      numberToMinimalBytes(vVal),
-      hexToBytes(rHex),
-      hexToBytes(sHex),
-    ]
+      const signedFields: Uint8Array[] = [
+        numberToMinimalBytes(nonce),
+        gasPrice,
+        gasLimit,
+        to,
+        value,
+        data,
+        numberToMinimalBytes(vVal),
+        hexToBytes(rHex),
+        hexToBytes(sHex),
+      ]
 
-    const signedRlp = rlpEncode(signedFields)
-    return addHexPrefix(bytesToHex(signedRlp))
+      const signedRlp = rlpEncode(signedFields)
+      return addHexPrefix(bytesToHex(signedRlp))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -303,30 +313,34 @@ export class ThetaSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // EIP-191 prefix: "\x19Ethereum Signed Message:\n" + message length
-    const prefix = new TextEncoder().encode(
-      `\x19Ethereum Signed Message:\n${msgBytes.length}`,
-    )
-    const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
-    prefixedMsg.set(prefix, 0)
-    prefixedMsg.set(msgBytes, prefix.length)
+      // EIP-191 prefix: "\x19Ethereum Signed Message:\n" + message length
+      const prefix = new TextEncoder().encode(
+        `\x19Ethereum Signed Message:\n${msgBytes.length}`,
+      )
+      const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
+      prefixedMsg.set(prefix, 0)
+      prefixedMsg.set(msgBytes, prefix.length)
 
-    // Hash the prefixed message
-    const msgHash = keccak_256(prefixedMsg)
+      // Hash the prefixed message
+      const msgHash = keccak_256(prefixedMsg)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery + 27
+      // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery + 27
 
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

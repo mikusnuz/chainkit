@@ -172,30 +172,34 @@ export class TronSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // If rawDataHex is provided (pre-built transaction from Tron node),
-    // use it directly for signing
-    const rawDataHex = tx.extra?.rawDataHex as string | undefined
-    if (!rawDataHex) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Tron transactions require rawDataHex in tx.extra (obtain from /wallet/createtransaction)',
-      )
+      // If rawDataHex is provided (pre-built transaction from Tron node),
+      // use it directly for signing
+      const rawDataHex = tx.extra?.rawDataHex as string | undefined
+      if (!rawDataHex) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Tron transactions require rawDataHex in tx.extra (obtain from /wallet/createtransaction)',
+        )
+      }
+
+      // The txID is the SHA-256 hash of the raw_data bytes
+      const rawDataBytes = hexToBytes(stripHexPrefix(rawDataHex))
+      const txId = sha256(rawDataBytes)
+
+      // Sign the txID with secp256k1
+      const signature = secp256k1.sign(txId, pkBytes)
+
+      // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery
+
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // The txID is the SHA-256 hash of the raw_data bytes
-    const rawDataBytes = hexToBytes(stripHexPrefix(rawDataHex))
-    const txId = sha256(rawDataBytes)
-
-    // Sign the txID with secp256k1
-    const signature = secp256k1.sign(txId, pkBytes)
-
-    // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery
-
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
   }
 
   /**
@@ -218,30 +222,34 @@ export class TronSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Tron message prefix
-    const prefix = new TextEncoder().encode(
-      `\x19TRON Signed Message:\n${msgBytes.length}`,
-    )
-    const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
-    prefixedMsg.set(prefix, 0)
-    prefixedMsg.set(msgBytes, prefix.length)
+      // Tron message prefix
+      const prefix = new TextEncoder().encode(
+        `\x19TRON Signed Message:\n${msgBytes.length}`,
+      )
+      const prefixedMsg = new Uint8Array(prefix.length + msgBytes.length)
+      prefixedMsg.set(prefix, 0)
+      prefixedMsg.set(msgBytes, prefix.length)
 
-    // Hash the prefixed message with keccak256
-    const msgHash = keccak_256(prefixedMsg)
+      // Hash the prefixed message with keccak256
+      const msgHash = keccak_256(prefixedMsg)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-    const v = signature.recovery + 27
+      // Encode as r (32 bytes) + s (32 bytes) + v (1 byte)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+      const v = signature.recovery + 27
 
-    return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+      return addHexPrefix(rHex + sHex + v.toString(16).padStart(2, '0'))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

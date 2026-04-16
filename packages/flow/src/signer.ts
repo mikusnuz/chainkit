@@ -423,151 +423,155 @@ export class FlowSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
 
-    // Raw mode: tx.data is already an encoded payload
-    if (tx.data && !tx.to) {
-      const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
-      const msgHash = sha256(messageBytes)
-      const signature = p256.sign(msgHash, pkBytes)
+      // Raw mode: tx.data is already an encoded payload
+      if (tx.data && !tx.to) {
+        const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+        const msgHash = sha256(messageBytes)
+        const signature = p256.sign(msgHash, pkBytes)
 
-      const rHex = signature.r.toString(16).padStart(64, '0')
-      const sHex = signature.s.toString(16).padStart(64, '0')
-      return addHexPrefix(rHex + sHex)
-    }
+        const rHex = signature.r.toString(16).padStart(64, '0')
+        const sHex = signature.s.toString(16).padStart(64, '0')
+        return addHexPrefix(rHex + sHex)
+      }
 
-    // Transfer mode: build a full Flow transaction
-    if (!tx.to || !tx.value) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction must have either data (raw payload) or to + value (FLOW transfer)',
-      )
-    }
+      // Transfer mode: build a full Flow transaction
+      if (!tx.to || !tx.value) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have either data (raw payload) or to + value (FLOW transfer)',
+        )
+      }
 
-    const senderAddress = stripHexPrefix(tx.extra?.senderAddress as string ?? tx.from as string)
-    const keyIndex = (tx.extra?.keyIndex as number) ?? 0
-    const sequenceNumber = (tx.extra?.sequenceNumber as number) ?? 0
-    const gasLimit = (tx.extra?.gasLimit as number) ?? 9999
-    const referenceBlockId = tx.extra?.referenceBlockId as string
-    const fungibleTokenAddr = tx.extra?.fungibleTokenAddress as string ?? '0xf233dcee88fe0abe'
-    const flowTokenAddr = tx.extra?.flowTokenAddress as string ?? '0x1654653399040a61'
-    // Flow accounts specify a hashing algorithm for their keys.
-    // SHA3_256 is the default for most Flow accounts.
-    const hashAlgorithm = (tx.extra?.hashAlgorithm as string) ?? 'SHA3_256'
-    const hashFn = hashAlgorithm === 'SHA2_256' ? sha256 : sha3_256
+      const senderAddress = stripHexPrefix(tx.extra?.senderAddress as string ?? tx.from as string)
+      const keyIndex = (tx.extra?.keyIndex as number) ?? 0
+      const sequenceNumber = (tx.extra?.sequenceNumber as number) ?? 0
+      const gasLimit = (tx.extra?.gasLimit as number) ?? 9999
+      const referenceBlockId = tx.extra?.referenceBlockId as string
+      const fungibleTokenAddr = tx.extra?.fungibleTokenAddress as string ?? '0xf233dcee88fe0abe'
+      const flowTokenAddr = tx.extra?.flowTokenAddress as string ?? '0x1654653399040a61'
+      // Flow accounts specify a hashing algorithm for their keys.
+      // SHA3_256 is the default for most Flow accounts.
+      const hashAlgorithm = (tx.extra?.hashAlgorithm as string) ?? 'SHA3_256'
+      const hashFn = hashAlgorithm === 'SHA2_256' ? sha256 : sha3_256
 
-    if (!referenceBlockId) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'referenceBlockId is required in tx.extra for Flow transfer mode',
-      )
-    }
+      if (!referenceBlockId) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'referenceBlockId is required in tx.extra for Flow transfer mode',
+        )
+      }
 
-    const recipientAddress = tx.to
-    // Value is in 10^-8 FLOW units, convert to UFix64 string (8 decimal places)
-    const amountValue = BigInt(tx.value as string)
-    const wholePart = amountValue / 100_000_000n
-    const fracPart = amountValue % 100_000_000n
-    const amountUFix64 = `${wholePart}.${fracPart.toString().padStart(8, '0')}`
+      const recipientAddress = tx.to
+      // Value is in 10^-8 FLOW units, convert to UFix64 string (8 decimal places)
+      const amountValue = BigInt(tx.value as string)
+      const wholePart = amountValue / 100_000_000n
+      const fracPart = amountValue % 100_000_000n
+      const amountUFix64 = `${wholePart}.${fracPart.toString().padStart(8, '0')}`
 
-    // Build the Cadence script for FLOW transfer
-    const script = [
-      `import FungibleToken from ${fungibleTokenAddr}`,
-      `import FlowToken from ${flowTokenAddr}`,
-      '',
-      'transaction(amount: UFix64, to: Address) {',
-      '    prepare(signer: auth(BorrowValue) &Account) {',
-      '        let vaultRef = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)!',
-      '        let sentVault <- vaultRef.withdraw(amount: amount)',
-      '        let receiverRef = getAccount(to).capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)!.borrow()!',
-      '        receiverRef.deposit(from: <-sentVault)',
-      '    }',
-      '}',
-    ].join('\n')
+      // Build the Cadence script for FLOW transfer
+      const script = [
+        `import FungibleToken from ${fungibleTokenAddr}`,
+        `import FlowToken from ${flowTokenAddr}`,
+        '',
+        'transaction(amount: UFix64, to: Address) {',
+        '    prepare(signer: auth(BorrowValue) &Account) {',
+        '        let vaultRef = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(from: /storage/flowTokenVault)!',
+        '        let sentVault <- vaultRef.withdraw(amount: amount)',
+        '        let receiverRef = getAccount(to).capabilities.get<&{FungibleToken.Receiver}>(/public/flowTokenReceiver)!.borrow()!',
+        '        receiverRef.deposit(from: <-sentVault)',
+        '    }',
+        '}',
+      ].join('\n')
 
-    // Build JSON-Cadence arguments
-    const args = [
-      { type: 'UFix64', value: amountUFix64 },
-      { type: 'Address', value: recipientAddress.startsWith('0x') ? recipientAddress : '0x' + recipientAddress },
-    ]
+      // Build JSON-Cadence arguments
+      const args = [
+        { type: 'UFix64', value: amountUFix64 },
+        { type: 'Address', value: recipientAddress.startsWith('0x') ? recipientAddress : '0x' + recipientAddress },
+      ]
 
-    // Build the transaction payload for RLP encoding
-    // Flow transaction payload structure:
-    // [script, arguments, referenceBlockId, gasLimit, proposalKey, payer, authorizers]
-    // proposalKey = [address, keyIndex, sequenceNumber]
+      // Build the transaction payload for RLP encoding
+      // Flow transaction payload structure:
+      // [script, arguments, referenceBlockId, gasLimit, proposalKey, payer, authorizers]
+      // proposalKey = [address, keyIndex, sequenceNumber]
 
-    const scriptBase64 = bytesToBase64(new TextEncoder().encode(script))
-    const argsBase64 = args.map(a => bytesToBase64(new TextEncoder().encode(JSON.stringify(a))))
+      const scriptBase64 = bytesToBase64(new TextEncoder().encode(script))
+      const argsBase64 = args.map(a => bytesToBase64(new TextEncoder().encode(JSON.stringify(a))))
 
-    // RLP encode the payload for signing
-    // Flow's canonical form is a FLAT structure (not nested for proposal key):
-    // [script, arguments, refBlockID, gasLimit, proposalKeyAddress, proposalKeyID, proposalKeySeqNum, payer, authorizers]
-    const payloadItems: RlpItem = [
-      new TextEncoder().encode(script),                                  // script
-      args.map(a => new TextEncoder().encode(JSON.stringify(a))),       // arguments
-      hexToBytes(stripHexPrefix(referenceBlockId)),                      // reference block ID
-      numberToUint64BE(gasLimit),                                        // gas limit
-      hexToBytes(senderAddress.padStart(16, '0')),                      // proposal key address (8 bytes)
-      numberToUint64BE(keyIndex),                                        // proposal key index
-      numberToUint64BE(sequenceNumber),                                  // proposal key sequence number
-      hexToBytes(senderAddress.padStart(16, '0')),                      // payer
-      [hexToBytes(senderAddress.padStart(16, '0'))],                    // authorizers
-    ]
+      // RLP encode the payload for signing
+      // Flow's canonical form is a FLAT structure (not nested for proposal key):
+      // [script, arguments, refBlockID, gasLimit, proposalKeyAddress, proposalKeyID, proposalKeySeqNum, payer, authorizers]
+      const payloadItems: RlpItem = [
+        new TextEncoder().encode(script),                                  // script
+        args.map(a => new TextEncoder().encode(JSON.stringify(a))),       // arguments
+        hexToBytes(stripHexPrefix(referenceBlockId)),                      // reference block ID
+        numberToUint64BE(gasLimit),                                        // gas limit
+        hexToBytes(senderAddress.padStart(16, '0')),                      // proposal key address (8 bytes)
+        numberToUint64BE(keyIndex),                                        // proposal key index
+        numberToUint64BE(sequenceNumber),                                  // proposal key sequence number
+        hexToBytes(senderAddress.padStart(16, '0')),                      // payer
+        [hexToBytes(senderAddress.padStart(16, '0'))],                    // authorizers
+      ]
 
-    const payloadEncoded = rlpEncode(payloadItems)
+      const payloadEncoded = rlpEncode(payloadItems)
 
-    // Domain separation tag for transaction payload
-    const domainTag = rightPadTo32(new TextEncoder().encode('FLOW-V0.0-transaction'))
-    const payloadMessage = concatBytes(domainTag, payloadEncoded)
+      // Domain separation tag for transaction payload
+      const domainTag = rightPadTo32(new TextEncoder().encode('FLOW-V0.0-transaction'))
+      const payloadMessage = concatBytes(domainTag, payloadEncoded)
 
-    // For single-signer (proposer == payer == authorizer), payload_signatures
-    // are empty and only the envelope signature is needed. The payer signs the
-    // envelope which wraps the payload + empty payload_signatures.
-    // Build the envelope (payload + empty payload signatures)
-    const envelopeItems: RlpItem = [
-      payloadItems,                                                      // payload
-      [],                                                                // payload signatures (empty for single-signer)
-    ]
+      // For single-signer (proposer == payer == authorizer), payload_signatures
+      // are empty and only the envelope signature is needed. The payer signs the
+      // envelope which wraps the payload + empty payload_signatures.
+      // Build the envelope (payload + empty payload signatures)
+      const envelopeItems: RlpItem = [
+        payloadItems,                                                      // payload
+        [],                                                                // payload signatures (empty for single-signer)
+      ]
 
-    const envelopeEncoded = rlpEncode(envelopeItems)
+      const envelopeEncoded = rlpEncode(envelopeItems)
 
-    // Sign the envelope using the account's hashing algorithm
-    const envelopeMessage = concatBytes(domainTag, envelopeEncoded)
-    const envelopeHash = hashFn(envelopeMessage)
-    const envelopeSig = p256.sign(envelopeHash, pkBytes)
-    const envelopeSigHex = envelopeSig.r.toString(16).padStart(64, '0') + envelopeSig.s.toString(16).padStart(64, '0')
+      // Sign the envelope using the account's hashing algorithm
+      const envelopeMessage = concatBytes(domainTag, envelopeEncoded)
+      const envelopeHash = hashFn(envelopeMessage)
+      const envelopeSig = p256.sign(envelopeHash, pkBytes)
+      const envelopeSigHex = envelopeSig.r.toString(16).padStart(64, '0') + envelopeSig.s.toString(16).padStart(64, '0')
 
-    // Build the REST API transaction body
-    const txBody = {
-      script: scriptBase64,
-      arguments: argsBase64,
-      reference_block_id: stripHexPrefix(referenceBlockId),
-      gas_limit: gasLimit.toString(),
-      proposal_key: {
-        address: senderAddress.padStart(16, '0'),
-        key_index: keyIndex.toString(),
-        sequence_number: sequenceNumber.toString(),
-      },
-      payer: senderAddress.padStart(16, '0'),
-      authorizers: [senderAddress.padStart(16, '0')],
-      payload_signatures: [],
-      envelope_signatures: [
-        {
+      // Build the REST API transaction body
+      const txBody = {
+        script: scriptBase64,
+        arguments: argsBase64,
+        reference_block_id: stripHexPrefix(referenceBlockId),
+        gas_limit: gasLimit.toString(),
+        proposal_key: {
           address: senderAddress.padStart(16, '0'),
           key_index: keyIndex.toString(),
-          signature: bytesToBase64(hexToBytes(envelopeSigHex)),
+          sequence_number: sequenceNumber.toString(),
         },
-      ],
-    }
+        payer: senderAddress.padStart(16, '0'),
+        authorizers: [senderAddress.padStart(16, '0')],
+        payload_signatures: [],
+        envelope_signatures: [
+          {
+            address: senderAddress.padStart(16, '0'),
+            key_index: keyIndex.toString(),
+            signature: bytesToBase64(hexToBytes(envelopeSigHex)),
+          },
+        ],
+      }
 
-    // Return as JSON string (broadcastTransaction expects this)
-    return JSON.stringify(txBody)
+      // Return as JSON string (broadcastTransaction expects this)
+      return JSON.stringify(txBody)
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -593,28 +597,32 @@ export class FlowSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      // SHA-256 hash for signing
+      const msgHash = sha256(msgBytes)
+
+      // Sign with P-256
+      const signature = p256.sign(msgHash, pkBytes)
+
+      // Encode as r (32 bytes) + s (32 bytes)
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
+
+      return addHexPrefix(rHex + sHex)
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    // SHA-256 hash for signing
-    const msgHash = sha256(msgBytes)
-
-    // Sign with P-256
-    const signature = p256.sign(msgHash, pkBytes)
-
-    // Encode as r (32 bytes) + s (32 bytes)
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
-
-    return addHexPrefix(rHex + sHex)
   }
 
   /**

@@ -10,8 +10,8 @@ function mockRpcResponse(result: unknown) {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
-    text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: 1, result })),
+    json: () => Promise.resolve({ jsonrpc: '2.0', result }),
+    text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', result })),
   }
 }
 
@@ -20,8 +20,8 @@ function mockRpcError(code: number, message: string) {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, error: { code, message } }),
-    text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code, message } })),
+    json: () => Promise.resolve({ jsonrpc: '2.0', error: { code, message } }),
+    text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', error: { code, message } })),
   }
 }
 

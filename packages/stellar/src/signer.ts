@@ -266,28 +266,32 @@ export class StellarSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      // The transaction envelope hash to sign should be in tx.data (hex-encoded)
+      if (!tx.data) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction data (serialized transaction hash) is required for Stellar signing',
+        )
+      }
+
+      const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
+
+      // Sign with ED25519
+      const signature = ed25519.sign(messageBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // The transaction envelope hash to sign should be in tx.data (hex-encoded)
-    if (!tx.data) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction data (serialized transaction hash) is required for Stellar signing',
-      )
-    }
-
-    const messageBytes = hexToBytes(stripHexPrefix(tx.data as string))
-
-    // Sign with ED25519
-    const signature = ed25519.sign(messageBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 
   /**
@@ -311,19 +315,23 @@ export class StellarSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      const signature = ed25519.sign(msgBytes, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    const signature = ed25519.sign(msgBytes, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 }

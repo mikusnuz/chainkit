@@ -11,7 +11,7 @@ import { sha256 } from '@noble/hashes/sha256'
 import { sha512 } from '@noble/hashes/sha512'
 import { ripemd160 } from '@noble/hashes/ripemd160'
 import { hmac } from '@noble/hashes/hmac'
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
+import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils'
 import { base58check } from '@scure/base'
 
 /**
@@ -581,80 +581,88 @@ export class NeoSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Extract Neo-specific fields from the transaction
-    const version = 0
-    // Neo uses random nonces (not sequential like Ethereum)
-    const nonce = tx.nonce ?? (Math.random() * 0xffffffff) >>> 0
-    const systemFee = BigInt(tx.fee?.systemFee as string ?? '0')
-    const networkFee = BigInt(tx.fee?.networkFee as string ?? '0')
-    const validUntilBlock = Number(tx.extra?.validUntilBlock ?? 0)
-    const networkMagic = Number(tx.extra?.networkMagic ?? 860833102) // Neo3 mainnet magic
+      // Extract Neo-specific fields from the transaction
+      const version = 0
+      // Neo uses random nonces (not sequential like Ethereum)
+      // Use cryptographically secure random instead of Math.random()
+      const nonce = tx.nonce ?? (() => {
+        const nonceBytes = randomBytes(4)
+        return new DataView(nonceBytes.buffer, nonceBytes.byteOffset, nonceBytes.byteLength).getUint32(0)
+      })()
+      const systemFee = BigInt(tx.fee?.systemFee as string ?? '0')
+      const networkFee = BigInt(tx.fee?.networkFee as string ?? '0')
+      const validUntilBlock = Number(tx.extra?.validUntilBlock ?? 0)
+      const networkMagic = Number(tx.extra?.networkMagic ?? 860833102) // Neo3 mainnet magic
 
-    // Build signer account (script hash of the sender)
-    const compressedPubKey = p256.getPublicKey(pkBytes, true)
-    const vScript = buildVerificationScript(compressedPubKey)
-    const senderScriptHash = getScriptHash(vScript)
+      // Build signer account (script hash of the sender)
+      const compressedPubKey = p256.getPublicKey(pkBytes, true)
+      const vScript = buildVerificationScript(compressedPubKey)
+      const senderScriptHash = getScriptHash(vScript)
 
-    // Build the NeoVM script
-    let script: Uint8Array
-    if (tx.data) {
-      // Raw script provided directly
-      script = hexToBytes(stripHexPrefix(tx.data as string))
-    } else if (tx.to && tx.value) {
-      // Build a NEP-17 transfer script from to/value/asset fields
-      const asset = (tx.extra?.asset as string) ?? 'GAS'
-      const contractHash = resolveContractHash(asset)
-      const toScriptHash = addressToScriptHash(tx.to)
-      const amount = BigInt(tx.value as string)
-      script = buildTransferScript(contractHash, senderScriptHash, toScriptHash, amount)
-    } else {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PARAMS,
-        'Transaction must have either data (raw script) or to + value (NEP-17 transfer)',
+      // Build the NeoVM script
+      let script: Uint8Array
+      if (tx.data) {
+        // Raw script provided directly
+        script = hexToBytes(stripHexPrefix(tx.data as string))
+      } else if (tx.to && tx.value) {
+        // Build a NEP-17 transfer script from to/value/asset fields
+        const asset = (tx.extra?.asset as string) ?? 'GAS'
+        const contractHash = resolveContractHash(asset)
+        const toScriptHash = addressToScriptHash(tx.to)
+        const amount = BigInt(tx.value as string)
+        script = buildTransferScript(contractHash, senderScriptHash, toScriptHash, amount)
+      } else {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PARAMS,
+          'Transaction must have either data (raw script) or to + value (NEP-17 transfer)',
+        )
+      }
+
+      // Serialize transaction (unsigned portion)
+      const txData = concatBytes(
+        new Uint8Array([version]),                         // version
+        encodeUint32LE(nonce),                             // nonce
+        encodeUint64LE(systemFee),                         // systemFee
+        encodeUint64LE(networkFee),                        // networkFee
+        encodeUint32LE(validUntilBlock),                   // validUntilBlock
+        encodeVarInt(1),                                   // signers count = 1
+        senderScriptHash,                                  // signer: account (20 bytes)
+        new Uint8Array([0x01]),                            // signer: scope = CalledByEntry
+        encodeVarInt(0),                                   // attributes count = 0
+        encodeVarBytes(script),                            // script
       )
+
+      // Hash the transaction for signing: SHA-256(magic_le_4bytes + SHA-256(txData))
+      const magicBytes = encodeUint32LE(networkMagic)
+      const txHash = sha256(txData)
+      const signingData = concatBytes(magicBytes, txHash)
+      const msgHash = sha256(signingData)
+
+      // Sign with P-256
+      const signature = p256.sign(msgHash, pkBytes)
+      const sigBytes = signature.toCompactRawBytes() // 64 bytes (r + s)
+
+      // Build witness: invocation script + verification script
+      // Invocation script: 0x0C 0x40 <64-byte signature>
+      const invocationScript = new Uint8Array(2 + 64)
+      invocationScript[0] = 0x0c // PUSHDATA1
+      invocationScript[1] = 0x40 // length = 64
+      invocationScript.set(sigBytes, 2)
+
+      // Serialize signed transaction: txData + witnesses
+      const signedTx = concatBytes(
+        txData,
+        encodeVarInt(1),                                   // witnesses count = 1
+        encodeVarBytes(invocationScript),                  // invocation script
+        encodeVarBytes(vScript),                           // verification script
+      )
+
+      return addHexPrefix(bytesToHex(signedTx))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Serialize transaction (unsigned portion)
-    const txData = concatBytes(
-      new Uint8Array([version]),                         // version
-      encodeUint32LE(nonce),                             // nonce
-      encodeUint64LE(systemFee),                         // systemFee
-      encodeUint64LE(networkFee),                        // networkFee
-      encodeUint32LE(validUntilBlock),                   // validUntilBlock
-      encodeVarInt(1),                                   // signers count = 1
-      senderScriptHash,                                  // signer: account (20 bytes)
-      new Uint8Array([0x01]),                            // signer: scope = CalledByEntry
-      encodeVarInt(0),                                   // attributes count = 0
-      encodeVarBytes(script),                            // script
-    )
-
-    // Hash the transaction for signing: SHA-256(magic_le_4bytes + SHA-256(txData))
-    const magicBytes = encodeUint32LE(networkMagic)
-    const txHash = sha256(txData)
-    const signingData = concatBytes(magicBytes, txHash)
-    const msgHash = sha256(signingData)
-
-    // Sign with P-256
-    const signature = p256.sign(msgHash, pkBytes)
-    const sigBytes = signature.toCompactRawBytes() // 64 bytes (r + s)
-
-    // Build witness: invocation script + verification script
-    // Invocation script: 0x0C 0x40 <64-byte signature>
-    const invocationScript = new Uint8Array(2 + 64)
-    invocationScript[0] = 0x0c // PUSHDATA1
-    invocationScript[1] = 0x40 // length = 64
-    invocationScript.set(sigBytes, 2)
-
-    // Serialize signed transaction: txData + witnesses
-    const signedTx = concatBytes(
-      txData,
-      encodeVarInt(1),                                   // witnesses count = 1
-      encodeVarBytes(invocationScript),                  // invocation script
-      encodeVarBytes(vScript),                           // verification script
-    )
-
-    return addHexPrefix(bytesToHex(signedTx))
   }
 
   /**
@@ -680,18 +688,22 @@ export class NeoSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // Hash the message with SHA-256
-    const msgHash = sha256(msgBytes)
+      // Hash the message with SHA-256
+      const msgHash = sha256(msgBytes)
 
-    // Sign with P-256
-    const signature = p256.sign(msgHash, pkBytes)
-    const sigBytes = signature.toCompactRawBytes() // 64 bytes (r + s)
+      // Sign with P-256
+      const signature = p256.sign(msgHash, pkBytes)
+      const sigBytes = signature.toCompactRawBytes() // 64 bytes (r + s)
 
-    return addHexPrefix(bytesToHex(sigBytes))
+      return addHexPrefix(bytesToHex(sigBytes))
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }

@@ -26,6 +26,8 @@ export enum ErrorCode {
   RPC_ALL_FAILED = 'RPC_ALL_FAILED',
   /** RPC returned an error response */
   RPC_ERROR = 'RPC_ERROR',
+  /** RPC returned an invalid JSON-RPC response */
+  RPC_INVALID_RESPONSE = 'RPC_INVALID_RESPONSE',
   /** Chain/network not supported */
   UNSUPPORTED_CHAIN = 'UNSUPPORTED_CHAIN',
   /** Feature not supported by the chain adapter */

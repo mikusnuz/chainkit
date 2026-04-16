@@ -6,7 +6,7 @@ function createMockResponse(result: unknown): Response {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result }),
+    json: () => Promise.resolve({ jsonrpc: '2.0', result }),
   } as unknown as Response
 }
 
@@ -152,10 +152,7 @@ describe('BitcoinProvider', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
-        json: () =>
-          Promise.resolve({
-            jsonrpc: '2.0',
-            id: 1,
+        json: () => Promise.resolve({ jsonrpc: '2.0',
             error: { code: -5, message: 'No such mempool or blockchain transaction' },
           }),
       } as unknown as Response)
@@ -279,10 +276,7 @@ describe('BitcoinProvider', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
-        json: () =>
-          Promise.resolve({
-            jsonrpc: '2.0',
-            id: 1,
+        json: () => Promise.resolve({ jsonrpc: '2.0',
             error: { code: -8, message: 'Block height out of range' },
           }),
       } as unknown as Response)

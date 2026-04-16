@@ -10,7 +10,6 @@ function mockRpcResponse(result: unknown) {
     ok: true,
     json: async () => ({
       jsonrpc: '2.0',
-      id: 1,
       result,
     }),
   })
@@ -21,7 +20,6 @@ function mockRpcError(code: number, message: string) {
     ok: true,
     json: async () => ({
       jsonrpc: '2.0',
-      id: 1,
       error: { code, message },
     }),
   })

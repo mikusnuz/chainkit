@@ -188,7 +188,7 @@ describe('ThetaSigner', () => {
       expect(sig1).toBe(sig2)
     })
 
-    it('should default to Theta mainnet chain ID (361)', async () => {
+    it('should require chainId in tx.extra', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, THETA_HD_PATH)
       const tx = {
         from: signer.getAddress(pk),
@@ -196,11 +196,12 @@ describe('ThetaSigner', () => {
         value: '0',
         nonce: 0,
         fee: { gasPrice: '0x0', gasLimit: '0x5208' },
-        // no extra.chainId -> should default to 361
+        // no extra.chainId -> should throw
       }
 
-      const signedTx = await signer.signTransaction({ privateKey: pk, tx: tx })
-      expect(signedTx).toMatch(/^0x[0-9a-f]+$/)
+      await expect(signer.signTransaction({ privateKey: pk, tx: tx })).rejects.toThrow(
+        'chainId is required',
+      )
     })
   })
 })

@@ -10,7 +10,6 @@ function mockRpcResponse(result: unknown) {
     ok: true,
     json: async () => ({
       jsonrpc: '2.0',
-      id: 1,
       result,
     }),
   }
@@ -93,7 +92,6 @@ describe('SuiProvider', () => {
         ok: true,
         json: async () => ({
           jsonrpc: '2.0',
-          id: 1,
           error: { code: -32000, message: 'Transaction not found' },
         }),
       })
@@ -157,7 +155,6 @@ describe('SuiProvider', () => {
         ok: true,
         json: async () => ({
           jsonrpc: '2.0',
-          id: 1,
           error: { code: -32000, message: 'Checkpoint not found' },
         }),
       })

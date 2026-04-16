@@ -1,5 +1,5 @@
 import type { ChainProvider, ChainSigner, UnsignedTx, TransactionInfo, WaitForTransactionOptions } from '@chainkit/core'
-import { waitForTransaction as waitForTransactionHelper } from '@chainkit/core'
+import { waitForTransaction as waitForTransactionHelper, ChainKitError, ErrorCode } from '@chainkit/core'
 import type {
   ChainConfig,
   ReadOnlyChainInstance,
@@ -40,15 +40,46 @@ function createFullInstance(
 ): FullChainInstance {
   const readOnly = createReadOnlyInstance(provider)
 
+  // SA-013: Nonce mutex for concurrent sends
+  let localNonce: number | null = null
+  let nonceMutex = Promise.resolve<number>(0)
+
+  async function getNextNonce(): Promise<number> {
+    nonceMutex = nonceMutex.then(async () => {
+      if (localNonce === null) {
+        const from = signer.getAddress(privateKey)
+        const n = await provider.getNonce(from)
+        localNonce = typeof n === 'number' ? n : parseInt(String(n), 10)
+      }
+      return localNonce!++
+    })
+    return nonceMutex
+  }
+
+  /**
+   * SA-003: Validate recipient address before building a transaction.
+   */
+  function validateRecipientAddress(to: string): void {
+    if (signer.validateAddress && !signer.validateAddress(to)) {
+      throw new ChainKitError(
+        ErrorCode.INVALID_ADDRESS,
+        `Invalid recipient address: ${to}`,
+      )
+    }
+  }
+
   /**
    * Build an UnsignedTx by auto-fetching nonce and fee from the provider.
    */
   async function buildUnsignedTx(params: SendParams): Promise<UnsignedTx> {
+    // SA-003: Validate recipient address
+    validateRecipientAddress(params.to)
+
     const from = signer.getAddress(privateKey)
 
-    // Auto-fetch nonce and fee in parallel
+    // SA-013: Use nonce mutex for concurrent send safety
     const [nonce, feeEstimate] = await Promise.all([
-      provider.getNonce(from),
+      getNextNonce(),
       provider.estimateFee(),
     ])
 

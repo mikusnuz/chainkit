@@ -12,7 +12,7 @@ function rpcSuccess(result: unknown) {
   return {
     ok: true,
     status: 200,
-    json: async () => ({ jsonrpc: '2.0', id: 1, result }),
+    json: async () => ({ jsonrpc: '2.0', result }),
   }
 }
 

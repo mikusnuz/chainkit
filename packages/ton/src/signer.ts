@@ -445,85 +445,89 @@ export class TonSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
-
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
-    }
-
-    // Get public key and wallet address
-    const publicKey = ed25519.getPublicKey(pkBytes)
-    const walletAddr = getWalletAddress(publicKey)
-
-    // Parse transaction parameters
-    const bounce = tx.extra?.bounce !== undefined ? (tx.extra.bounce as boolean) : true
-    const seqno = tx.nonce ?? 0
-    const validUntil = tx.extra?.validUntil
-      ? (tx.extra.validUntil as number)
-      : Math.floor(Date.now() / 1000) + 60
-    const includeStateInit = tx.extra?.stateInit === true || seqno === 0
-
-    // Parse destination address
-    let destAddr: { workchain: number; hash: Uint8Array }
     try {
-      destAddr = parseAddress(tx.to)
-    } catch {
-      throw new ChainKitError(
-        ErrorCode.INVALID_ADDRESS,
-        `Invalid destination address: ${tx.to}`,
-      )
+
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      // Get public key and wallet address
+      const publicKey = ed25519.getPublicKey(pkBytes)
+      const walletAddr = getWalletAddress(publicKey)
+
+      // Parse transaction parameters
+      const bounce = tx.extra?.bounce !== undefined ? (tx.extra.bounce as boolean) : true
+      const seqno = tx.nonce ?? 0
+      const validUntil = tx.extra?.validUntil
+        ? (tx.extra.validUntil as number)
+        : Math.floor(Date.now() / 1000) + 60
+      const includeStateInit = tx.extra?.stateInit === true || seqno === 0
+
+      // Parse destination address
+      let destAddr: { workchain: number; hash: Uint8Array }
+      try {
+        destAddr = parseAddress(tx.to)
+      } catch {
+        throw new ChainKitError(
+          ErrorCode.INVALID_ADDRESS,
+          `Invalid destination address: ${tx.to}`,
+        )
+      }
+
+      // Build the internal transfer message
+      const internalMsgCell = buildInternalMessage({
+        dest: destAddr,
+        value: BigInt(tx.value as string),
+        bounce,
+      })
+
+      // Build the wallet v4r2 transfer body
+      const transferBody = buildTransferBody({
+        seqno,
+        internalMsgCell,
+        validUntil,
+      })
+
+      // Hash the body cell and sign with ED25519
+      const bodyHash = transferBody.hash()
+      const signature = ed25519.sign(bodyHash, pkBytes)
+
+      // Build signed body: signature(512 bits) + original body data + refs
+      const signedBody = beginCell()
+        .storeBytes(signature) // 64 bytes = 512 bits
+        .storeCell(transferBody) // inline: copy bits + refs from transfer body
+        .endCell()
+
+      // Build state init cell if needed
+      let stateInitCell: Cell | undefined
+      if (includeStateInit) {
+        const code = getWalletV4R2Code()
+        const data = buildWalletData(publicKey)
+        stateInitCell = buildStateInitCell(code, data)
+      }
+
+      // Build external message
+      const extCell = buildExternalMessage({
+        walletAddress: walletAddr,
+        signedBody,
+        stateInitCell,
+      })
+
+      // Serialize to BOC
+      const boc = extCell.toBoc()
+
+      // Return as base64 (this is what TON APIs expect for sendBoc)
+      let binary = ''
+      for (const byte of boc) {
+        binary += String.fromCharCode(byte)
+      }
+      return btoa(binary)
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Build the internal transfer message
-    const internalMsgCell = buildInternalMessage({
-      dest: destAddr,
-      value: BigInt(tx.value as string),
-      bounce,
-    })
-
-    // Build the wallet v4r2 transfer body
-    const transferBody = buildTransferBody({
-      seqno,
-      internalMsgCell,
-      validUntil,
-    })
-
-    // Hash the body cell and sign with ED25519
-    const bodyHash = transferBody.hash()
-    const signature = ed25519.sign(bodyHash, pkBytes)
-
-    // Build signed body: signature(512 bits) + original body data + refs
-    const signedBody = beginCell()
-      .storeBytes(signature) // 64 bytes = 512 bits
-      .storeCell(transferBody) // inline: copy bits + refs from transfer body
-      .endCell()
-
-    // Build state init cell if needed
-    let stateInitCell: Cell | undefined
-    if (includeStateInit) {
-      const code = getWalletV4R2Code()
-      const data = buildWalletData(publicKey)
-      stateInitCell = buildStateInitCell(code, data)
-    }
-
-    // Build external message
-    const extCell = buildExternalMessage({
-      walletAddress: walletAddr,
-      signedBody,
-      stateInitCell,
-    })
-
-    // Serialize to BOC
-    const boc = extCell.toBoc()
-
-    // Return as base64 (this is what TON APIs expect for sendBoc)
-    let binary = ''
-    for (const byte of boc) {
-      binary += String.fromCharCode(byte)
-    }
-    return btoa(binary)
   }
 
   /**
@@ -556,23 +560,27 @@ export class TonSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
-      )
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
+
+      // Hash and sign with ED25519
+      const msgHash = sha256(msgBytes)
+      const signature = ed25519.sign(msgHash, pkBytes)
+
+      return addHexPrefix(bytesToHex(signature))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
-
-    // Hash and sign with ED25519
-    const msgHash = sha256(msgBytes)
-    const signature = ed25519.sign(msgHash, pkBytes)
-
-    return addHexPrefix(bytesToHex(signature))
   }
 
   /**

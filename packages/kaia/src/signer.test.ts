@@ -139,12 +139,12 @@ describe('KaiaSigner', () => {
       expect(signedTx.length).toBeGreaterThan(10)
     })
 
-    it('should default chainId to 8217 (Kaia mainnet)', async () => {
+    it('should require chainId in tx.extra', async () => {
       const pk = await signer.derivePrivateKey(TEST_MNEMONIC, KAIA_DEFAULT_PATH)
       const address = signer.getAddress(pk)
 
-      // Sign without explicit chainId
-      const signedTx = await signer.signTransaction({ privateKey: pk, tx: {
+      // Sign without explicit chainId should throw
+      await expect(signer.signTransaction({ privateKey: pk, tx: {
           from: address,
           to: '0x0000000000000000000000000000000000000001',
           value: '0',
@@ -153,9 +153,7 @@ describe('KaiaSigner', () => {
             gasLimit: '0x5208',
           },
           nonce: 0,
-        } })
-
-      expect(signedTx).toMatch(/^0x/)
+        } })).rejects.toThrow('chainId is required')
     })
   })
 

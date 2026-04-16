@@ -401,70 +401,74 @@ export class CosmosSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    if (pkBytes.length !== 32) {
-      throw new ChainKitError(
-        ErrorCode.INVALID_PRIVATE_KEY,
-        `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+      if (pkBytes.length !== 32) {
+        throw new ChainKitError(
+          ErrorCode.INVALID_PRIVATE_KEY,
+          `Invalid private key length: expected 32 bytes, got ${pkBytes.length}`,
+        )
+      }
+
+      const publicKey = secp256k1.getPublicKey(pkBytes, true)
+
+      // Extract Cosmos-specific fields from extra
+      const extra = tx.extra ?? {}
+      const chainId = (extra.chainId as string) ?? ''
+      const accountNumber = (extra.accountNumber as number) ?? 0
+      const sequence = (extra.sequence as number) ?? 0
+      const memo = (extra.memo as string) ?? ''
+
+      // Fee parameters
+      const feeDenom = (tx.fee?.denom as string) ?? 'uatom'
+      const feeAmount = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? '0'
+      const gasLimit = parseInt((tx.fee?.gasLimit as string) ?? (tx.fee?.gas as string) ?? '200000', 10)
+
+      // Build messages
+      let protoMessages: Array<{ typeUrl: string; value: Uint8Array }>
+
+      if (extra.messages && Array.isArray(extra.messages)) {
+        // Use pre-built messages from extra (each must have typeUrl and value)
+        protoMessages = (extra.messages as Array<{ typeUrl: string; value: Uint8Array }>)
+      } else {
+        // Default: build a single MsgSend from from/to/value
+        const denom = (extra.denom as string) ?? feeDenom
+        const msgSendBytes = encodeMsgSend(tx.from ?? '', tx.to, [
+          { denom, amount: tx.value ?? tx.amount ?? '0' },
+        ])
+        protoMessages = [
+          { typeUrl: '/cosmos.bank.v1beta1.MsgSend', value: msgSendBytes },
+        ]
+      }
+
+      // Encode TxBody
+      const bodyBytes = encodeTxBody(protoMessages, memo)
+
+      // Encode AuthInfo
+      const authInfoBytes = encodeAuthInfo(
+        publicKey,
+        sequence,
+        [{ denom: feeDenom, amount: feeAmount }],
+        gasLimit,
       )
+
+      // Encode SignDoc
+      const signDocBytes = encodeSignDoc(bodyBytes, authInfoBytes, chainId, accountNumber)
+
+      // SHA-256 hash of the SignDoc, then sign with secp256k1
+      const signDocHash = sha256(signDocBytes)
+      const signature = secp256k1.sign(signDocHash, pkBytes)
+
+      // Extract compact signature: r (32 bytes) || s (32 bytes) = 64 bytes
+      const sigBytes = signature.toCompactRawBytes()
+
+      // Build TxRaw
+      const txRawBytes = encodeTxRaw(bodyBytes, authInfoBytes, [sigBytes])
+
+      return addHexPrefix(bytesToHex(txRawBytes))
+    } finally {
+      pkBytes.fill(0)
     }
-
-    const publicKey = secp256k1.getPublicKey(pkBytes, true)
-
-    // Extract Cosmos-specific fields from extra
-    const extra = tx.extra ?? {}
-    const chainId = (extra.chainId as string) ?? ''
-    const accountNumber = (extra.accountNumber as number) ?? 0
-    const sequence = (extra.sequence as number) ?? 0
-    const memo = (extra.memo as string) ?? ''
-
-    // Fee parameters
-    const feeDenom = (tx.fee?.denom as string) ?? 'uatom'
-    const feeAmount = (tx.fee?.fee as string) ?? (tx.fee?.amount as string) ?? '0'
-    const gasLimit = parseInt((tx.fee?.gasLimit as string) ?? (tx.fee?.gas as string) ?? '200000', 10)
-
-    // Build messages
-    let protoMessages: Array<{ typeUrl: string; value: Uint8Array }>
-
-    if (extra.messages && Array.isArray(extra.messages)) {
-      // Use pre-built messages from extra (each must have typeUrl and value)
-      protoMessages = (extra.messages as Array<{ typeUrl: string; value: Uint8Array }>)
-    } else {
-      // Default: build a single MsgSend from from/to/value
-      const denom = (extra.denom as string) ?? feeDenom
-      const msgSendBytes = encodeMsgSend(tx.from ?? '', tx.to, [
-        { denom, amount: tx.value ?? tx.amount ?? '0' },
-      ])
-      protoMessages = [
-        { typeUrl: '/cosmos.bank.v1beta1.MsgSend', value: msgSendBytes },
-      ]
-    }
-
-    // Encode TxBody
-    const bodyBytes = encodeTxBody(protoMessages, memo)
-
-    // Encode AuthInfo
-    const authInfoBytes = encodeAuthInfo(
-      publicKey,
-      sequence,
-      [{ denom: feeDenom, amount: feeAmount }],
-      gasLimit,
-    )
-
-    // Encode SignDoc
-    const signDocBytes = encodeSignDoc(bodyBytes, authInfoBytes, chainId, accountNumber)
-
-    // SHA-256 hash of the SignDoc, then sign with secp256k1
-    const signDocHash = sha256(signDocBytes)
-    const signature = secp256k1.sign(signDocHash, pkBytes)
-
-    // Extract compact signature: r (32 bytes) || s (32 bytes) = 64 bytes
-    const sigBytes = signature.toCompactRawBytes()
-
-    // Build TxRaw
-    const txRawBytes = encodeTxRaw(bodyBytes, authInfoBytes, [sigBytes])
-
-    return addHexPrefix(bytesToHex(txRawBytes))
   }
 
   /**
@@ -490,22 +494,26 @@ export class CosmosSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = hexToBytes(stripHexPrefix(privateKey))
+    try {
 
-    // Convert message to bytes
-    const msgBytes =
-      typeof message === 'string' ? new TextEncoder().encode(message) : message
+      // Convert message to bytes
+      const msgBytes =
+        typeof message === 'string' ? new TextEncoder().encode(message) : message
 
-    // SHA-256 hash of the message
-    const msgHash = sha256(msgBytes)
+      // SHA-256 hash of the message
+      const msgHash = sha256(msgBytes)
 
-    // Sign
-    const signature = secp256k1.sign(msgHash, pkBytes)
+      // Sign
+      const signature = secp256k1.sign(msgHash, pkBytes)
 
-    // Return r (32 bytes) + s (32 bytes) = 64 bytes
-    const rHex = signature.r.toString(16).padStart(64, '0')
-    const sHex = signature.s.toString(16).padStart(64, '0')
+      // Return r (32 bytes) + s (32 bytes) = 64 bytes
+      const rHex = signature.r.toString(16).padStart(64, '0')
+      const sHex = signature.s.toString(16).padStart(64, '0')
 
-    return addHexPrefix(rHex + sHex)
+      return addHexPrefix(rHex + sHex)
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }
 

@@ -519,6 +519,7 @@ export class StacksSigner implements ChainSigner {
   async signTransaction(params: SignTransactionParams): Promise<HexString> {
     const { privateKey, tx } = params
     const pkBytes = getPrivateKeyBytes(privateKey)
+    try {
 
     // If tx.data contains a pre-serialized transaction hash, sign it directly
     if (tx.data) {
@@ -551,6 +552,9 @@ export class StacksSigner implements ChainSigner {
     })
 
     return '0x' + serializedHex
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 
   /**
@@ -567,6 +571,7 @@ export class StacksSigner implements ChainSigner {
   async signMessage(params: SignMessageParams): Promise<HexString> {
     const { privateKey, message } = params
     const pkBytes = getPrivateKeyBytes(privateKey)
+    try {
 
     const msgBytes =
       typeof message === 'string' ? new TextEncoder().encode(message) : message
@@ -587,6 +592,9 @@ export class StacksSigner implements ChainSigner {
     const v = signature.recovery + 27
 
     return '0x' + rHex + sHex + v.toString(16).padStart(2, '0')
+    } finally {
+      pkBytes.fill(0)
+    }
   }
 }
 
