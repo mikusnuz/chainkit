@@ -47,6 +47,11 @@ const EDSIG_PREFIX = new Uint8Array([0x09, 0xf5, 0xcd, 0x86, 0x12])
 const BLOCK_HASH_PREFIX = new Uint8Array([0x01, 0x34])
 
 /**
+ * Tezos operation tag for reveal operations.
+ */
+const REVEAL_TAG = 0x6b
+
+/**
  * Tezos operation tag for transaction operations.
  */
 const TRANSACTION_TAG = 0x6c
@@ -285,6 +290,84 @@ function forgeTransaction(params: TezosForgeParams): Uint8Array {
   forged.set(amount, offset); offset += amount.length
   forged.set(destination, offset); offset += destination.length
   forged.set(paramsFlag, offset)
+
+  return forged
+}
+
+// ===== Reveal operation forging =====
+
+/**
+ * Parameters for forging a Tezos reveal operation.
+ */
+export interface TezosRevealParams {
+  /** Block hash to use as branch (B...) */
+  branch: string
+  /** Source tz1 address */
+  source: string
+  /** Fee in mutez */
+  fee: string | number | bigint
+  /** Account counter (nonce) */
+  counter: string | number | bigint
+  /** Gas limit */
+  gasLimit: string | number | bigint
+  /** Storage limit */
+  storageLimit: string | number | bigint
+  /** Raw ED25519 public key (32 bytes) */
+  publicKey: Uint8Array
+}
+
+/**
+ * Forge a Tezos reveal operation into binary bytes.
+ *
+ * Binary format:
+ *   branch (32 bytes)
+ *   + operation tag (1 byte, 0x6b for reveal)
+ *   + source (21 bytes: tag + 20-byte hash)
+ *   + fee (zarith)
+ *   + counter (zarith)
+ *   + gas_limit (zarith)
+ *   + storage_limit (zarith)
+ *   + public_key (1 byte tag (0x00=ed25519) + 32 bytes)
+ */
+function forgeReveal(params: TezosRevealParams): Uint8Array {
+  const branch = decodeBlockHash(params.branch)
+  const source = decodeTz1Address(params.source)
+  const fee = zarithEncode(params.fee)
+  const counter = zarithEncode(params.counter)
+  const gasLimit = zarithEncode(params.gasLimit)
+  const storageLimit = zarithEncode(params.storageLimit)
+
+  // Public key: 0x00 tag (ed25519) + 32-byte key
+  const pubKeyEncoded = new Uint8Array(33)
+  pubKeyEncoded[0] = 0x00
+  pubKeyEncoded.set(params.publicKey, 1)
+
+  // Trailing padding byte (required by recent Tezos protocols)
+  const trailingPad = new Uint8Array([0x00])
+
+  const totalSize =
+    branch.length +       // 32
+    1 +                   // operation tag
+    source.length +       // 21
+    fee.length +          // variable
+    counter.length +      // variable
+    gasLimit.length +     // variable
+    storageLimit.length + // variable
+    pubKeyEncoded.length + // 33
+    trailingPad.length    // 1
+
+  const forged = new Uint8Array(totalSize)
+  let offset = 0
+
+  forged.set(branch, offset); offset += branch.length
+  forged[offset] = REVEAL_TAG; offset += 1
+  forged.set(source, offset); offset += source.length
+  forged.set(fee, offset); offset += fee.length
+  forged.set(counter, offset); offset += counter.length
+  forged.set(gasLimit, offset); offset += gasLimit.length
+  forged.set(storageLimit, offset); offset += storageLimit.length
+  forged.set(pubKeyEncoded, offset); offset += pubKeyEncoded.length
+  forged.set(trailingPad, offset)
 
   return forged
 }
@@ -631,6 +714,7 @@ export {
   encodePublicKey,
   encodeSignature,
   forgeTransaction,
+  forgeReveal,
   zarithEncode,
   decodeBlockHash,
   decodeTz1Address,

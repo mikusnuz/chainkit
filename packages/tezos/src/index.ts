@@ -4,12 +4,13 @@ export {
   encodePublicKey,
   encodeSignature,
   forgeTransaction,
+  forgeReveal,
   zarithEncode,
   decodeBlockHash,
   decodeTz1Address,
   encodeDestination,
 } from './signer.js'
-export type { TezosForgeParams } from './signer.js'
+export type { TezosForgeParams, TezosRevealParams } from './signer.js'
 export { TezosProvider } from './provider.js'
 export type { TezosProviderConfig } from './provider.js'
 export type { TezosTransactionData, TezosFeeDetail } from './types.js'
