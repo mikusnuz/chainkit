@@ -7,9 +7,10 @@ import ActionsSection from './ActionsSection'
 
 interface ChainPanelProps {
   chainId: ChainId
+  prefilledAddress?: string | null
 }
 
-const ChainPanel = ({ chainId }: ChainPanelProps) => {
+const ChainPanel = ({ chainId, prefilledAddress }: ChainPanelProps) => {
   const config = CHAIN_CONFIGS[chainId]
   const {
     wallet,
@@ -65,6 +66,7 @@ const ChainPanel = ({ chainId }: ChainPanelProps) => {
             config={config}
             wallet={wallet}
             onDerive={deriveWallet}
+            prefilledAddress={prefilledAddress}
           />
         </div>
 
